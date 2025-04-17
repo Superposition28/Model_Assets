@@ -39,6 +39,32 @@ def sanitize_uvs(uv_layer: bpy.types.MeshUVLoopLayer) -> None:
             uv.uv.x = 0.0
             uv.uv.y = 0.0
 
+def normalize_uvs(uv_list):
+    """
+    Normalize the UVs to fit inside the [0, 1] space.
+    """
+    min_u = min(uv[0] for uv in uv_list)
+    max_u = max(uv[0] for uv in uv_list)
+    min_v = min(uv[1] for uv in uv_list)
+    max_v = max(uv[1] for uv in uv_list)
+
+    range_u = max_u - min_u
+    range_v = max_v - min_v
+
+    if range_u == 0: range_u = 1.0  # Avoid divide-by-zero
+    if range_v == 0: range_v = 1.0
+
+    return [((u - min_u) / range_u, (v - min_v) / range_v) for u, v in uv_list]
+
+def utils_set_mode(mode: str) -> None:
+    """
+    Sets the Blender object mode to the specified mode.
+    """
+    print(f"[SetMode] Setting mode to {mode}")
+
+    if bpy.ops.object.mode_set.poll():
+        bpy.ops.object.mode_set(mode=mode, toggle=False)
+
 class SimpGameImport(bpy.types.Operator, ImportHelper):
     """
     A Blender operator for importing mesh files from The Simpsons Game.
@@ -177,11 +203,20 @@ class SimpGameImport(bpy.types.Operator, ImportHelper):
                             print(f"[UVError] Failed to assign UV for vert {l.vert.index}: {e}")
                             continue
 
-                bm.to_mesh(mesh)
+                # Normalize UVs to fit in [0, 1] space
+                UVTable = normalize_uvs(UVTable)
+
+                # Now, unwrap the mesh
+                utils_set_mode("EDIT")  # Switch to Edit Mode
+                bpy.ops.mesh.select_all(action='SELECT')  # Select all geometry
+                bpy.ops.uv.unwrap(method='ANGLE_BASED', margin=0.001)  # Unwrap using the Angle-Based method
+                utils_set_mode("OBJECT")  # Switch back to Object Mode
+
+                # Final cleanup
                 sanitize_uvs(mesh.uv_layers[uv_layer.name])
                 sanitize_uvs(mesh.uv_layers[cm_layer.name])
 
-                bm.free()
+                bm.free()  # Free BMesh
                 obj.rotation_euler = (1.5707963705062866, 0, 0)
 
             mesh_iter += 1
@@ -206,22 +241,13 @@ def strip2face(strip: list) -> list:
         flipped = not flipped
     return tmpTable
 
-def utils_set_mode(mode: str) -> None:
-    """
-    Sets the Blender object mode to the specified mode.
-    """
-    print(f"[SetMode] Setting mode to {mode}")
-
-    if bpy.ops.object.mode_set.poll():
-        bpy.ops.object.mode_set(mode=mode, toggle=False)
-
 def menu_func_import(self, context: bpy.types.Context) -> None:
     """
     Adds the custom import operator to the Blender import menu.
     """
     print("[MenuFunc] Adding import option to menu")
 
-    self.layout.operator(SimpGameImport.bl_idname, text="The Simpson Game (.rws,dff)")
+    self.layout.operator(SimpGameImport.bl_idname, text="The Simpsons Game (.rws,dff)")
 
 def register() -> None:
     """

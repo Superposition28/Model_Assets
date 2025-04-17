@@ -13,17 +13,10 @@ $gameSettingsSection = "GameSettings"
 # Define default tool locations (Windows specific - adjust as needed)
 $DefaultToolPaths = @{
     "Blender"       = @(".\Tools\blender\exe\blender-4.0.2-windows-x64\blender.exe", "C:\Program Files\Blender Foundation\Blender 4.0\blender.exe", "C:\Program Files\Blender Foundation\Blender 4.1\blender.exe") # Add more versions as needed
-    "Noesis"        = @(".\Tools\noesis\exe\Noesis64.exe", "C:\Noesis\noesis.exe")
-    "FFmpeg"        = @("C:\ffmpeg\bin\ffmpeg.exe")
-    "vgmstream-cli" = @("C:\vgmstream\vgmstream-cli.exe")
-    "QuickBMS"      = @(".\Tools\quickbms\exe\quickbms.exe", "C:\QuickBMS\quickbms.exe")
 }
 
 # Define tools that support auto-install and their install commands (Windows example using winget)
 $AutoInstallTools = @{
-    "FFmpeg"                = "winget install ffmpeg -s winget"
-    "vgmstream-cli"         = "winget install vgmstream -s winget" # May need a different package name
-    "Microsoft.DotNet.SDK.9" = "winget install Microsoft.DotNet.SDK.9 -s winget"
     "dotnet-script"         = "dotnet tool install -g dotnet-script"
 }
 
@@ -512,46 +505,6 @@ if ($blenderExe) {
 } else {
     Write-Host "Blender executable not found through default paths or config. Attempting download and extraction..." -ForegroundColor Yellow
     # The download and extract logic is now within Get-ToolPath for Blender
-}
-
-# Initialize Noesis path
-$noesisExe = Get-ToolPath -toolName "Noesis" -executableName "noesis.exe" -defaultPaths $DefaultToolPaths["Noesis"]
-if ($noesisExe) {
-    Write-Host "Noesis path found: $($noesisExe)" -ForegroundColor Green
-} else {
-    Write-Host "Noesis executable not found through default paths or config. Please provide the path manually when prompted." -ForegroundColor Yellow
-}
-
-# Initialize FFmpeg path with auto-install
-$ffmpegExe = Get-ToolPath -toolName "FFmpeg" -executableName "ffmpeg.exe" -defaultPaths $DefaultToolPaths["FFmpeg"]
-if ($ffmpegExe) {
-    Write-Host "FFmpeg path found: $($ffmpegExe)" -ForegroundColor Green
-} else {
-    Write-Host "FFmpeg executable not found through default paths, config, or system path." -ForegroundColor Yellow
-}
-
-# Initialize vgmstream-cli path with auto-install
-$vgmstreamExe = Get-ToolPath -toolName "vgmstream-cli" -executableName "vgmstream-cli.exe" -defaultPaths $DefaultToolPaths["vgmstream-cli"]
-if ($vgmstreamExe) {
-    Write-Host "vgmstream-cli path found: $($vgmstreamExe)" -ForegroundColor Green
-} else {
-    Write-Host "vgmstream-cli executable not found through default paths, config, or system path." -ForegroundColor Yellow
-}
-
-# Initialize QuickBMS path
-$quickbmsExe = Get-ToolPath -toolName "QuickBMS" -executableName "quickbms.exe" -defaultPaths $DefaultToolPaths["QuickBMS"]
-if ($quickbmsExe) {
-    Write-Host "QuickBMS path found: $($quickbmsExe)" -ForegroundColor Green
-} else {
-    Write-Host "QuickBMS executable not found through default paths or config. Please provide the path manually when prompted." -ForegroundColor Yellow
-}
-
-# Initialize Microsoft.DotNet.SDK.9 path (this might not be an executable path but rather ensures the SDK is installed)
-$dotnetSDK9Installed = Get-ToolPath -toolName "Microsoft.DotNet.SDK.9" -executableName "dotnet.exe" # Using dotnet.exe as a check
-if ($dotnetSDK9Installed) {
-    Write-Host "Microsoft.DotNet.SDK.9 seems to be installed." -ForegroundColor Green
-} else {
-    Write-Host "Microsoft.DotNet.SDK.9 not found. Auto-install will be attempted." -ForegroundColor Yellow
 }
 
 # Initialize dotnet-script path

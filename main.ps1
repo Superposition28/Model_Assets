@@ -28,76 +28,27 @@ if ($null -ne $exampleResponsePathValue) {
 
 # Define the menu options and their corresponding actions
 $menuOptions = @{
-    "01" = @{
+    "1" = @{
         "Name" = "Initializes"
         "Action" = @{
             "Path" = ".\init.ps1"
             "Args" = ""
         }
     }
-    "02" = @{
-        "Name" = "Rename USRDIR Folders"
-        "Action" = @{
-            "Path" = ".\Tools\process\2_RenameDirs\RenameFolders.ps1"
-            "Args" = ""
-        }
-    }
-    "03" = @{
-        "Name" = "QuickBMS STR"
-        "Action" = @{
-            "Path" = ".\Tools\process\3_QuickBMS\str.ps1"
-            "Args" = "-OverwriteOption ""s"""
-        }
-    }
-    "04" = @{
-        "Name" = "Flatten Directories"
-        "Action" = @{
-            "Command" = "dotnet script Tools\process\4_Flat\flat.csx"
-            "Args" = ".\GameFiles\Main\PS3_GAME\QuickBMS_STR_OUTPUT",".\GameFiles\Main\PS3_GAME\Flattened_OUTPUT"
-        }
-    }
-    "05" = @{
-        "Name" = "Video Conversion"
-        "Action" = @{
-            "Path" = ".\Tools\process\5_AudioVideo\4_Video.ps1"
-            "Args" = ""
-        }
-    }
-    "06" = @{
-        "Name" = "Audio Conversion"
-        "Action" = @{
-            "Path" = ".\Tools\process\5_AudioVideo\4_Audio.ps1"
-            "Args" = ""
-        }
-    }
-    "07" = @{
+    "2" = @{
         "Name" = "init Blender"
         "Action" = @{
             "Command" = "dotnet script .\Tools\process\6_Asset\init.csx"
             "Args" = ""
         }
     }
-    "08" = @{
+    "3" = @{
         "Name" = "Blender Conversion"
         "Action" = @{
             "Command" = "dotnet script Tools\process\6_Asset\blend.csx"
             "Args" = ""
         }
     }
-    "09" = @{
-        "Name" = "txd extraction initialization"
-        "Action" = @{
-            "Command" = "dotnet script Tools\process\9_Texture\init.csx"
-            "Args" = ""
-        }
-    }
-	"10" = @{
-		"Name" = "Noesis txd directory"
-		"Action" = @{
-			"Path" = ".\Tools\process\9_Texture\copy.ps1"
-			"Args" = "-Convert"
-		}
-	}
     "c" = @{
         "Name" = "Clear Terminal"
         "Action" = "ClearTerminal"
