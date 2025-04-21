@@ -406,7 +406,7 @@ try { // Wrap main logic in a try-catch block
     Print($"Working Directory: {workingDirRoot}", ConsoleColor.Cyan);
 
     // Define the root directories for asset files
-    var preinstancedDir = Path.Combine(workingDirRoot, "GameFiles", "Main", "PS3_GAME", "Flattened_OUTPUT");
+    var preinstancedDir = Path.Combine(workingDirRoot, "..\\QBMS_TSG\\GameFiles\\quickbms_out");
     var blendDir = Path.Combine(workingDirRoot, "GameFiles", "Main", "PS3_GAME", "Blender_TMP_OUTPUT");
     var glbDir = Path.Combine(workingDirRoot, "GameFiles", "Main", "PS3_GAME", "Assets_Blender_OUTPUT");
     // Ensure Tools\process\6_Asset directory exists before writing the file

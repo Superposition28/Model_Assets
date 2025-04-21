@@ -480,24 +480,6 @@ Write-Host "Starting initialization..." -ForegroundColor Cyan
 # Initialize Workspace
 Initialize-Workspace -workspacePath "."
 
-# Check for existing ISO input folder path
-$isoInputFolderPathConfigured = Get-ConfigValue -key "IsoInputFolderPath" -section $gameSettingsSection
-if (-not $isoInputFolderPathConfigured) {
-    # Ask for ISO input folder path
-    $isoInputFolderPath = Get-IsoInputFolder
-    if ($isoInputFolderPath) {
-        Save-Config -key "IsoInputFolderPath" -value $isoInputFolderPath -section $gameSettingsSection
-        # Attempt to extract ISO immediately after getting the path
-        Extract-Iso -inputFolderPath $isoInputFolderPath -outputPath $gameFilesMainPath
-    } else {
-        Write-Warning "No valid ISO input folder provided. Skipping ISO extraction."
-    }
-} else {
-    Write-Host "ISO input folder path found in config: $($isoInputFolderPathConfigured)" -ForegroundColor Green
-    # Attempt to extract ISO if the path is already configured
-    Extract-Iso -inputFolderPath $isoInputFolderPathConfigured -outputPath $gameFilesMainPath
-}
-
 # Initialize Blender path with download and extract
 $blenderExe = Get-ToolPath -toolName "Blender" -executableName "blender.exe" -expectedVersionPrefix "4.0" -defaultPaths $DefaultToolPaths["Blender"]
 if ($blenderExe) {
@@ -505,14 +487,6 @@ if ($blenderExe) {
 } else {
     Write-Host "Blender executable not found through default paths or config. Attempting download and extraction..." -ForegroundColor Yellow
     # The download and extract logic is now within Get-ToolPath for Blender
-}
-
-# Initialize dotnet-script path
-$dotnetScriptInstalled = Get-ToolPath -toolName "dotnet-script" -executableName "dotnet-script"
-if ($dotnetScriptInstalled) {
-    Write-Host "dotnet-script seems to be installed." -ForegroundColor Green
-} else {
-    Write-Host "dotnet-script not found. Auto-install will be attempted." -ForegroundColor Yellow
 }
 
 # Add more tool initializations here as needed

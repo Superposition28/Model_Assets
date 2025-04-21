@@ -34,61 +34,15 @@ string pythonExtensionFile = "Tools\\blender\\io_import_simpson_game_fork.py";
 string assetMappingFile = "Tools\\process\\6_Asset\\asset_mapping.json";
 string configFile = "config.ini";
 
+string blenderExePath = "Tools\\blender\\exe\\blender-4.0.2-windows-x64\\blender.exe";
+
+void Print(string message, ConsoleColor color) {
+	Console.ForegroundColor = color;
+	Console.WriteLine(message);
+	Console.ResetColor();
+}
 
 int loopCount = 0;
-
-// # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-// Path to the C# script
-string csxScriptPath = "Tools\\Global\\ConfigReader.csx";
-
-// Define the parameters to pass to the C# script
-string section = "ToolPaths";
-string key = "BlenderExePath";
-string defaultValue = "err";
-
-// Execute the C# script using dotnet-script, passing the parameters
-string responsePathValue = RunDotnetScript(csxScriptPath, section, key, defaultValue);
-    
-// Output the result from the script
-Print("Path from config: " + responsePathValue, ConsoleColor.Cyan);
-
-// Ensure file exists
-if (!File.Exists(responsePathValue)) {
-    Print("Executable not found at: " + responsePathValue, ConsoleColor.Red);
-    Environment.Exit(1);
-}
-
-// Update the path to the Blender executable
-string blenderExePath = responsePathValue;
-
-public static void Print(string message, ConsoleColor color) {
-    Console.ForegroundColor = color;
-    Console.WriteLine(message);
-    Console.ResetColor();
-}
-
-// Helper function to run the dotnet-script and get the output
-static string RunDotnetScript(string scriptPath, string section, string key, string defaultValue) {
-    var startInfo = new ProcessStartInfo {
-        FileName = "dotnet-script",
-        Arguments = $"{scriptPath} {section} {key} {defaultValue}",
-        RedirectStandardOutput = true,
-        UseShellExecute = false,
-        CreateNoWindow = true
-    };
-
-    using (var process = Process.Start(startInfo)) {
-        using (var reader = process.StandardOutput) {
-            string result = reader.ReadToEnd();
-            process.WaitForExit();
-            return result.Trim(); // Return the output from the script
-        }
-    }
-}
-// # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
-
 
 // Blender Processing function
 void BlenderProcessing() {
