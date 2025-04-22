@@ -199,12 +199,12 @@ class SimpGameImport(bpy.types.Operator, ImportHelper):
                     print(f"[Sanitize] Warning: CM layer '{cm_layer_name}' not found.")
 
                 # --- Smart UV Project unwrap test ---
-                bpy.context.view_layer.objects.active = obj
-                obj.select_set(True)
-                utils_set_mode('EDIT')
-                bpy.ops.mesh.select_all(action='SELECT')
-                bpy.ops.uv.smart_project(angle_limit=66, island_margin=0.03)
-                utils_set_mode('OBJECT')
+                #bpy.context.view_layer.objects.active = obj
+                #obj.select_set(True)
+                #utils_set_mode('EDIT')
+                #bpy.ops.mesh.select_all(action='SELECT')
+                #bpy.ops.uv.smart_project(angle_limit=66, island_margin=0.03)
+                #utils_set_mode('OBJECT')
 
                 obj.rotation_euler = (1.5707963705062866, 0, 0)
 

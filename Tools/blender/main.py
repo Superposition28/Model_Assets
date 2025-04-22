@@ -1,259 +1,292 @@
 """
 This script automates the process of opening a Blender file, importing a .preinstanced file,
 exporting the scene to .glb format, and then quitting Blender.
+It includes cache clearing for Python extensions.
 """
 
 import bpy
 import sys
 import os
 import time
+import shutil # Import shutil for removing directory trees
+import importlib # Import importlib for module invalidation and reloading
 
+# Define the addon module name once
+ADDON_MODULE_NAME = 'io_import_simpson_game_fork' # <--- MAKE SURE THIS MATCHES YOUR ADDON'S MODULE NAME
+
+def log_to_blender(text: str, block_name="SimpGame_Import_Log"):
+    """Appends a message to a text block in Blender's text editor, if possible."""
+    # Print to the console for immediate feedback
+    print(text)
+    # Only try to write to Blender's text editor if bpy.data has 'texts'
+    if hasattr(bpy.data, "texts"):
+        if block_name not in bpy.data.texts:
+            text_block = bpy.data.texts.new(block_name)
+        else:
+            text_block = bpy.data.texts[block_name]
+        text_block.write(text + "\n")
+
+    # You can also print to the console for immediate feedback
+    print(text)
+
+
+def clear_addon_cache():
+    """Deletes __pycache__ directories from the Blender user scripts/addons path."""
+    log_to_blender("Attempting to clear addon Python cache...")
+    try:
+        # Get the path to the user's addons directory for the current Blender version
+        addons_path = bpy.utils.user_resource('SCRIPTS', path='addons')
+        log_to_blender(f"Checking for cache in: {addons_path}")
+
+        if not os.path.exists(addons_path):
+            log_to_blender(f"Warning: Addons path not found: {addons_path}. No cache to clear.")
+            return
+
+        cache_cleared = False
+        # Walk through the addons directory to find __pycache__ folders
+        for dirpath, dirnames, filenames in os.walk(addons_path):
+            if '__pycache__' in dirnames:
+                cache_path = os.path.join(dirpath, '__pycache__')
+                log_to_blender(f"Deleting cache directory: {cache_path}")
+                try:
+                    shutil.rmtree(cache_path)
+                    cache_cleared = True
+                except OSError as e:
+                    log_to_blender(f"Error deleting cache directory {cache_path}: {e}")
+                except Exception as e:
+                    log_to_blender(f"An unexpected error occurred while deleting cache {cache_path}: {e}")
+
+        if cache_cleared:
+            log_to_blender("Addon Python cache clearing process completed.")
+        else:
+            log_to_blender("No addon Python cache directories found or cleared.")
+
+    except Exception as e:
+        log_to_blender(f"An error occurred during cache clearing: {e}")
+
+
+# --- Script Execution Starts Here ---
 try:
-    print("")
     # Get file paths from arguments
-    base_blend_file_index = sys.argv.index('--') + 1 # example value "A:\TMP_TSG_LNKS\cc07225ea3a876253ae1dce564aba1f2_blend\play_sound.dff.PS3.blend"
-    base_blend_file = sys.argv[base_blend_file_index]  # Full path to the base blend file
-    print(f"1: \033[32mOpening blend file: {base_blend_file}\033[0m")
+    try:
+        argv_start_index = sys.argv.index('--') + 1
+        base_blend_file = sys.argv[argv_start_index]
+        input_preinstanced_file = sys.argv[argv_start_index + 1]
+        output_glb = sys.argv[argv_start_index + 2]
+        pythonextension_file = sys.argv[argv_start_index + 3]
 
-    input_preinstanced_file_index = sys.argv.index('--') + 2 # example value "A:\TMP_TSG_LNKS\cc07225ea3a876253ae1dce564aba1f2_preinstanced\play_sound.dff.PS3.preinstanced"
-    input_preinstanced_file_name = sys.argv[input_preinstanced_file_index]
-    input_preinstanced_file = input_preinstanced_file_name  # Full path to the input preinstanced file
-    print(f"2: \033[32mImporting preinstanced file: {input_preinstanced_file}\033[0m")
+        verbose_arg = sys.argv[argv_start_index + 4].lower()
+        verbose = (verbose_arg == "true")
 
-    output_glb_index = sys.argv.index('--') + 3 # example value "A:\TMP_TSG_LNKS\cc07225ea3a876253ae1dce564aba1f2_glb\play_sound.dff.PS3.glb"
-    output_glb_name = sys.argv[output_glb_index]
-    output_glb = output_glb_name  # Full path to the output glb file
-    print(f"3: \033[32mExporting to GLB file: {output_glb}\033[0m")
+        debugsleep_arg = sys.argv[argv_start_index + 5].lower()
+        debugsleep = (debugsleep_arg == "true")
 
-    pythonextension_file_index = sys.argv.index('--') + 4
-    pythonextension_file = sys.argv[pythonextension_file_index]
-    print(f"4: \033[32mUsing python extension: {pythonextension_file}\033[0m")
+    except (ValueError, IndexError) as e:
+        print(f"Error parsing arguments: {e}")
+        print("Usage: blender -b --python <script_name.py> -- <base_blend_file> <input_preinstanced_file> <output_glb> <pythonextension_file> <verbose> <debugsleep>")
+        sys.exit(1)
 
-    print("")
+    print(f"Script started with arguments:")
+    print(f"1: base_blend_file: {base_blend_file}")
+    print(f"2: input_preinstanced_file: {input_preinstanced_file}")
+    print(f"3: output_glb: {output_glb}")
+    print(f"4: pythonextension_file: {pythonextension_file}")
+    print(f"5: verbose: {verbose}")
+    print(f"6: debugsleep: {debugsleep}")
+    print("-" * 20)
 
-    verbose_index = sys.argv.index('--') + 5
-    verbose = sys.argv[verbose_index]
-    if verbose == "true":
-        print("Verbose mode enabled. Debugging information will be printed.")
 
-    debugsleep_index = sys.argv.index('--') + 6
-    debugsleep = sys.argv[debugsleep_index]
-    if debugsleep == "true":
-        print("Debug sleep mode enabled. The script will pause for debugging.")
-        time.sleep(0.5)
-
+    if debugsleep:
+        log_to_blender("Debug sleep mode enabled. The script will pause for debugging.")
+        time.sleep(0.5) # Short initial sleep
 
     # Check if base_blend_file exists
     if not os.path.exists(base_blend_file):
-        if debugsleep == "true":
-            print("Debug sleep mode enabled. The script will pause for debugging.")
-            time.sleep(5)
-        raise FileNotFoundError(f"9: Blend file not found: {base_blend_file}")
-    print(f"10: Blend file exists: {base_blend_file}")
+        log_to_blender(f"9: Error: Blend file not found: {base_blend_file}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1) # Use sys.exit for script termination
+    log_to_blender(f"10: Blend file exists: {base_blend_file}")
 
     # Check if input_preinstanced_file exists
     if not os.path.exists(input_preinstanced_file):
-        if debugsleep == "true":
-            print("Debug sleep mode enabled. The script will pause for debugging.")
-            time.sleep(5)
-        raise FileNotFoundError(f"11: Preinstanced file not found: {input_preinstanced_file}")
-    print(f"12: Preinstanced file exists: {input_preinstanced_file}")
+        log_to_blender(f"11: Error: Preinstanced file not found: {input_preinstanced_file}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1)
+    log_to_blender(f"12: Preinstanced file exists: {input_preinstanced_file}")
 
     # Get the directory for output_glb and check if it exists
     output_dir = os.path.dirname(output_glb)
 
+    # Your check for output directory assuming it's a symbolic link and cannot be made by makedirs
+    # If the parent directory of the symbolic link needs to exist, this check is relevant.
+    # If the symbolic link itself needs to exist beforehand, you might check os.path.exists(output_glb) earlier
+    # and handle the case where the target doesn't exist yet.
+    # The original script's logic here seems intended for a specific setup where the output dir
+    # is a symlink and makedirs won't work on it, but the path *should* exist.
     if output_dir and not os.path.exists(output_dir):
-        print(f"Creating output directory: {output_dir}")
-        #os.makedirs(output_dir, exist_ok=True)
-        print(f"13: Output directory cannot be made using symbolic link: {output_dir}")
-        exit(1)
-    #elif output_dir:
-        #print(f"14: Output directory exists: {output_dir}")
+        log_to_blender(f"13: Error: Output directory does not exist (and cannot be created/checked as symlink target): {output_dir}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1)
+    elif output_dir:
+        log_to_blender(f"14: Output directory exists: {output_dir}")
+
 
     # Check if pythonextension_file exists
     if not os.path.exists(pythonextension_file):
-        if debugsleep == "true":
-            print("Debug sleep mode enabled. The script will pause for debugging.")
-            time.sleep(5)
-        raise FileNotFoundError(f"16: Python extension file not found: {pythonextension_file}")
-    print(f"17: Python extension file exists: {pythonextension_file}")
+        log_to_blender(f"16: Error: Python extension file not found: {pythonextension_file}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1)
+    log_to_blender(f"17: Python extension file exists: {pythonextension_file}")
+
+    # --- Cache Clearing Step ---
+    clear_addon_cache()
+    # --- End Cache Clearing Step ---
+
 
     try:
         # Open the blend file
         bpy.ops.wm.open_mainfile(filepath=base_blend_file)
-        print(f"18: Blend file opened: {base_blend_file}")
+        log_to_blender(f"18: Blend file opened: {base_blend_file}")
     except Exception as e:
-        if debugsleep == "true":
-            print("Debug sleep mode enabled. The script will pause for debugging.")
-            time.sleep(5)
-        raise Exception(f"19: Error opening blend file: {e}")
+        log_to_blender(f"19: Error opening blend file: {e}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1)
 
-    #try:
-    # Ensure your extension is enabled
-    addon_module_name = 'io_import_simpson_game_fork'
+    # --- Addon Installation and Enabling ---
+    log_to_blender(f"Attempting to install and enable {ADDON_MODULE_NAME} addon from {pythonextension_file}")
 
-    if not bpy.context.preferences.addons.get(addon_module_name):
-        print(f"20: \033[32mEnabling {addon_module_name} addon\033[0m")
-        # Path to the addon file
-        pythonextension_file = os.path.abspath(pythonextension_file)
-        print(f"Addon path: {pythonextension_file}")
+    # Use absolute path for installation
+    addon_filepath_abs = os.path.abspath(pythonextension_file)
 
-        # Verify if the addon file exists
-        if not os.path.isfile(pythonextension_file):
-            raise FileNotFoundError(f"Addon file not found at: {pythonextension_file}")
-        else:
-            print(f"Addon file exists at: {pythonextension_file}")
-
-        try:
-            # Install the addon
-            bpy.ops.preferences.addon_install(filepath=pythonextension_file, overwrite=True)
-            print(f"21: Addon installed from: {pythonextension_file}")
-            bpy.ops.preferences.addon_enable(module=addon_module_name)
-
-        except Exception as e:
-            if debugsleep == "true":
-                print("Debug sleep mode enabled. The script will pause for debugging.")
-                time.sleep(5)
-            #raise Exception(f"22: Error installing addon: {e}")
-            print(f"23: Error installing addon: {e}")
-
-        try:
-            # Enable the addon
-            bpy.ops.preferences.addon_enable(module=addon_module_name)
-            print(f"26: Addon {addon_module_name} enabled.")
-
-            # Attempt to re-import the module
-            import importlib
-            importlib.invalidate_caches()  # Clear any cached module information
-            addon_module = importlib.import_module(addon_module_name)
-            print(f"26.1: Addon {addon_module_name} re-imported successfully.")
-        except ModuleNotFoundError as e:
-            #raise ModuleNotFoundError(f"27: Error enabling addon {addon_module_name}: {e}. " f"Ensure the addon file is correctly installed and named.")
-            print(f"27: Error enabling addon {addon_module_name}: {e}. " f"Ensure the addon file is correctly installed and named.")
-        except Exception as e:
-            if debugsleep == "true":
-                print("Debug sleep mode enabled. The script will pause for debugging.")
-                time.sleep(5)
-            raise Exception(f"27: Error enabling addon {addon_module_name}: {e}")
+    if not os.path.isfile(addon_filepath_abs):
+        log_to_blender(f"Error: Addon file not found at: {addon_filepath_abs}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1)
     else:
-        print(f"28: \033[32m{addon_module_name} addon is already enabled\033[0m")
-        ### previously removed and reinstalled the addon to ensure it was working, but currently disabled
+        log_to_blender(f"Addon file exists at: {addon_filepath_abs}")
 
-        #try:
-        #    bpy.ops.preferences.addon_disable(module=addon_module_name)
-        #    bpy.ops.preferences.addon_remove(module=addon_module_name)
-        #    print(f"29: Addon {addon_module_name} disabled and removed.")
-        #except Exception as e:
-        #    print(f"30: Error disabling/removing addon: {e}")
+    try:
+        # Install the addon, overwriting if it exists
+        bpy.ops.preferences.addon_install(filepath=addon_filepath_abs, overwrite=True)
+        log_to_blender(f"21: Addon installed/overwritten from: {addon_filepath_abs}")
 
-        #try:
-        #    # Install the addon
-        #    bpy.ops.preferences.addon_install(filepath=pythonextension_file, overwrite=True)
-        #    print(f"31: Addon re-installed from: {pythonextension_file}")
-        #    bpy.ops.preferences.addon_enable(module=addon_module_name)
-        #except Exception as e:
-        #    if debugsleep == "true":
-        #        print("Debug sleep mode enabled. The script will pause for debugging.")
-        #        time.sleep(5)
-        #    print(f"32: Error re-installing addon: {e}")
+        # Enable the addon
+        bpy.ops.preferences.addon_enable(module=ADDON_MODULE_NAME)
+        log_to_blender(f"26: Addon {ADDON_MODULE_NAME} enabled.")
 
-        #try:
-        #    # Enable the addon
-        #    bpy.ops.preferences.addon_enable(module=addon_module_name)
-        #    print(f"33: Addon {addon_module_name} enabled.")
+        # Invalidate import caches and attempt to reload the module
+        # This helps ensure Blender uses the newly installed/enabled code immediately
+        importlib.invalidate_caches()
+        # Check if the module is already loaded before attempting to reload
+        if ADDON_MODULE_NAME in sys.modules:
+            log_to_blender(f"Attempting to reload {ADDON_MODULE_NAME} module.")
+            addon_module = importlib.reload(sys.modules[ADDON_MODULE_NAME])
+            log_to_blender(f"26.1: Addon {ADDON_MODULE_NAME} reloaded successfully.")
+        else:
+            # If not already in sys.modules, a standard import should pick up the enabled addon
+            log_to_blender(f"{ADDON_MODULE_NAME} module not found in sys.modules, standard import expected on next access.")
+            # You might explicitly import it here if you need to access its contents immediately,
+            # but enabling should make its operators available.
+            # addon_module = importlib.import_module(ADDON_MODULE_NAME)
 
-        #    # Attempt to re-import the module
-        #    import importlib
-        #    importlib.invalidate_caches()  # Clear any cached module information
-        #    addon_module = importlib.import_module(addon_module_name)
-        #    print(f"33.1: Addon {addon_module_name} re-imported successfully.")
-        #except ModuleNotFoundError as e:
-        #    print(f"34: Error enabling addon {addon_module_name}: {e}. " f"Ensure the addon file is correctly installed and named.")
-        #except Exception as e:
-        #    if debugsleep == "true":
-        #        print("Debug sleep mode enabled. The script will pause for debugging.")
-        #        time.sleep(5)
-        #    raise Exception(f"35: Error enabling addon {addon_module_name}: {e}")
 
-    print(f"\033[32mImporting preinstanced file: {input_preinstanced_file}\033[0m")  # Green text for importing file
+    except ModuleNotFoundError as e:
+        log_to_blender(f"27: Error enabling addon {ADDON_MODULE_NAME}: {e}. Ensure the addon file is correctly installed and named ('{ADDON_MODULE_NAME}').")
+        if debugsleep: time.sleep(5)
+        # Optionally exit here if the core addon is required for import
+        # sys.exit(1)
+    except Exception as e:
+        log_to_blender(f"27: An unexpected error occurred during addon installation/enabling: {e}")
+        if debugsleep: time.sleep(5)
+        # Optionally exit here if the core addon is required for import
+        # sys.exit(1)
+    # --- End Addon Installation and Enabling ---
+
+
+    log_to_blender(f"Importing preinstanced file: {input_preinstanced_file}")
 
     try:
         # Call your custom import operator
+        # Ensure the operator bl_idname matches what's registered by your addon
         bpy.ops.custom_import_scene.simpgame(filepath=input_preinstanced_file)
-        print(f"32: Preinstanced file imported: {input_preinstanced_file}")
+        log_to_blender(f"32: Preinstanced file imported: {input_preinstanced_file}")
     except Exception as e:
-        if debugsleep == "true":
-            print("Debug sleep mode enabled. The script will pause for debugging.")
-            time.sleep(5)
-        raise Exception(f"33: Error importing preinstanced file: {e}")
+        log_to_blender(f"33: Error importing preinstanced file: {e}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1) # Exit if import fails
+
+    # Check if any objects were imported (optional but good practice)
+    # You might want to check if the collection "New Mesh" is linked and contains objects
+    imported_collection = bpy.data.collections.get("New Mesh")
+    if not imported_collection or not imported_collection.objects:
+        log_to_blender("Warning: No objects found in 'New Mesh' collection after import. Export might be empty.")
+        # Decide if you want to exit here or continue to export an empty/base file
+
 
     try:
         # Save a copy of the blend file with the imported content
-        saved_base_blend_file = os.path.splitext(base_blend_file)[0] + ".blend"
-        print(f"34: Saving blend file as: {saved_base_blend_file}")
+        # This saves to the path the blend file was originally opened from
+        # If you want to save to a *new* specific location, use save_as_mainfile
+        saved_blend_file_path = base_blend_file # Assuming you want to save back to the original path
 
-        # Ensure the directory exists
-        saved_blend_dir = os.path.dirname(saved_base_blend_file)
+        log_to_blender(f"34: Saving blend file to: {saved_blend_file_path}")
+
+        # Ensure the directory exists (redundant if opening existing file, but safe)
+        saved_blend_dir = os.path.dirname(saved_blend_file_path)
         if not os.path.exists(saved_blend_dir):
-            os.makedirs(saved_blend_dir, exist_ok=True)  # Create the directory if it doesn't exist
-            print(f"35: Created directory for saved blend file: {saved_blend_dir}")
-        else:
-            print(f"36: Directory for saved blend file exists: {saved_blend_dir}")
+            # This case should ideally not happen if base_blend_file exists,
+            # unless the path is structured unexpectedly.
+            log_to_blender(f"Warning: Directory for saved blend file didn't exist, attempting to create: {saved_blend_dir}")
+            os.makedirs(saved_blend_dir, exist_ok=True) # Create the directory if it doesn't exist
+
 
         # Save the blend file
-        #bpy.ops.wm.save_as_mainfile(filepath=saved_base_blend_file, check_existing=False)
         if bpy.data.is_dirty:
-            bpy.ops.wm.save_mainfile()
-            print("File saved.")
+            bpy.ops.wm.save_mainfile(filepath=saved_blend_file_path) # Explicitly set filepath
+            log_to_blender(f"37: Saved modified blend file: {saved_blend_file_path}")
         else:
-            print("No changes to save.")
-        print(f"37: \033[32mSaved imported blend file: {saved_base_blend_file}\033[0m")  # Green text for saved file
-    except Exception as e:
-        if debugsleep == "true":
-            print("Debug sleep mode enabled. The script will pause for debugging.")
-            time.sleep(5)
-        raise Exception(f"38: Error saving blend file: {e}")
+            log_to_blender("37: No changes to save to blend file.")
 
-    print(f"\033[32mExporting to GLB file: {output_glb}\033[0m")  # Green text for exporting file
+    except Exception as e:
+        log_to_blender(f"38: Error saving blend file: {e}")
+        if debugsleep: time.sleep(5)
+        # Decide if a save error should stop the GLB export
+        # sys.exit(1)
+
+    log_to_blender(f"Exporting to GLB file: {output_glb}")
 
     try:
         # Export the scene to .glb
-        bpy.ops.export_scene.gltf(filepath=output_glb)
-        print(f"39: Exported to GLB file: {output_glb}")
+        # Ensure output directory exists before exporting
+        output_dir = os.path.dirname(output_glb)
+        if output_dir and not os.path.exists(output_dir):
+            # This check was done earlier, but double-checking before export is safer
+            log_to_blender(f"Error: Output directory does not exist before GLB export: {output_dir}")
+            if debugsleep: time.sleep(5)
+            sys.exit(1) # Cannot export if directory doesn't exist
+        elif output_dir:
+            log_to_blender(f"Output directory confirmed before export: {output_dir}")
+
+        # Select all objects you want to export if necessary,
+        # or export the entire scene if that's the default behavior of gltf exporter
+        # bpy.ops.object.select_all(action='SELECT') # Example: select all objects
+
+        bpy.ops.export_scene.gltf(filepath=output_glb, export_format='GLB', use_selection=False) # use_selection=False exports everything
+        log_to_blender(f"39: Exported to GLB file: {output_glb}")
     except Exception as e:
-        if debugsleep == "true":
-            print("Debug sleep mode enabled. The script will pause for debugging.")
-            time.sleep(5)
-        raise Exception(f"40: Error exporting to GLB: {e}")
+        log_to_blender(f"40: Error exporting to GLB: {e}")
+        if debugsleep: time.sleep(5)
+        sys.exit(1) # Exit if export fails
 
-    print("41: \033[32mExport complete. Exiting Blender.\033[0m")  # Green text for export complete
+    log_to_blender("41: Export complete. Script finished successfully.")
 
-    #except Exception as e:
-    #    print(f"42: \033[31mError in main processing: {e}\033[0m")  # Red text for error message
-    #    if debugsleep == "true":
-    #        print("Debug sleep mode enabled. The script will pause for debugging.")
-    #        time.sleep(5)
-    #    #sys.exit(1)  # Exit script on error
-
-except ValueError as e:
-    print(f"43: \033[31mError: Incorrect number of arguments provided: {e}\033[0m")
-    print("Usage: blender -b --python <script_name.py> -- <base_blend_file> <input_preinstanced_file> <output_glb> <pythonextension_file>")
-    if debugsleep == "true":
-        print("Debug sleep mode enabled. The script will pause for debugging.")
-        time.sleep(5)
-    sys.exit(1)
-except FileNotFoundError as e:
-    print(f"44: \033[31mError: File not found: {e}\033[0m")
-    if debugsleep == "true":
-        print("Debug sleep mode enabled. The script will pause for debugging.")
-        time.sleep(5)
-    sys.exit(1)
 except Exception as e:
-    print(f"45: \033[31mAn unexpected error occurred at the top level: {e}\033[0m")
-    if debugsleep == "true":
-        print("Debug sleep mode enabled. The script will pause for debugging.")
-        time.sleep(5)
-    sys.exit(1)
+    # Catch any exceptions not specifically handled above
+    log_to_blender(f"45: An unexpected error occurred during script execution: {e}")
+    if debugsleep: time.sleep(5)
+    sys.exit(1) # Ensure script exits on unhandled error
+
 finally:
-    # Exit Blender
+    # Ensure Blender quits even if there were errors
+    log_to_blender("Exiting Blender.")
     bpy.ops.wm.quit_blender()
