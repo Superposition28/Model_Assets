@@ -4,33 +4,36 @@ exporting the scene to .glb format, and then quitting Blender.
 It includes cache clearing for Python extensions.
 """
 
+# --- Imports and Setup ---
 import bpy
 import sys
 import os
 import time
-import shutil # Import shutil for removing directory trees
-import importlib # Import importlib for module invalidation and reloading
+import shutil
+import importlib
 
 # Define the addon module name once
 ADDON_MODULE_NAME = 'io_import_simpson_game_fork' # <--- MAKE SURE THIS MATCHES YOUR ADDON'S MODULE NAME
+# --- End Imports and Setup ---
 
-def log_to_blender(text: str, block_name="SimpGame_Import_Log"):
-    """Appends a message to a text block in Blender's text editor, if possible."""
+# --- Logging Function ---
+def log_to_blender(text: str, block_name: str = "SimpGame_Import_Log", to_blender_editor: bool = False) -> None:
+    """Appends a message to a text block in Blender's text editor if requested, and always prints to console."""
     # Print to the console for immediate feedback
     print(text)
-    # Only try to write to Blender's text editor if bpy.data has 'texts'
-    if hasattr(bpy.data, "texts"):
+
+    # Only try to write to Blender's text editor if requested and bpy.data has 'texts'
+    if to_blender_editor and hasattr(bpy.data, "texts"):
         if block_name not in bpy.data.texts:
             text_block = bpy.data.texts.new(block_name)
         else:
             text_block = bpy.data.texts[block_name]
         text_block.write(text + "\n")
-
-    # You can also print to the console for immediate feedback
-    print(text)
+# --- End Logging Function ---
 
 
-def clear_addon_cache():
+# --- Cache Clearing Function ---
+def clear_addon_cache() -> None:
     """Deletes __pycache__ directories from the Blender user scripts/addons path."""
     log_to_blender("Attempting to clear addon Python cache...")
     try:
@@ -39,7 +42,7 @@ def clear_addon_cache():
         log_to_blender(f"Checking for cache in: {addons_path}")
 
         if not os.path.exists(addons_path):
-            log_to_blender(f"Warning: Addons path not found: {addons_path}. No cache to clear.")
+            log_to_blender(f"Warning: Addons path not found: {addons_path}. No cache to clear.", to_blender_editor=True) # Log warning to editor
             return
 
         cache_cleared = False
@@ -52,9 +55,9 @@ def clear_addon_cache():
                     shutil.rmtree(cache_path)
                     cache_cleared = True
                 except OSError as e:
-                    log_to_blender(f"Error deleting cache directory {cache_path}: {e}")
+                    log_to_blender(f"Error deleting cache directory {cache_path}: {e}", to_blender_editor=True) # Log error to editor
                 except Exception as e:
-                    log_to_blender(f"An unexpected error occurred while deleting cache {cache_path}: {e}")
+                    log_to_blender(f"An unexpected error occurred while deleting cache {cache_path}: {e}", to_blender_editor=True) # Log error to editor
 
         if cache_cleared:
             log_to_blender("Addon Python cache clearing process completed.")
@@ -62,12 +65,13 @@ def clear_addon_cache():
             log_to_blender("No addon Python cache directories found or cleared.")
 
     except Exception as e:
-        log_to_blender(f"An error occurred during cache clearing: {e}")
+        log_to_blender(f"An error occurred during cache clearing: {e}", to_blender_editor=True) # Log error to editor
+# --- End Cache Clearing Function ---
 
 
 # --- Script Execution Starts Here ---
 try:
-    # Get file paths from arguments
+    # --- Argument Parsing ---
     try:
         argv_start_index = sys.argv.index('--') + 1
         base_blend_file = sys.argv[argv_start_index]
@@ -81,11 +85,17 @@ try:
         debugsleep_arg = sys.argv[argv_start_index + 5].lower()
         debugsleep = (debugsleep_arg == "true")
 
+        # get argument for optional export to glb/fbx
+        export_arg = sys.argv[argv_start_index + 6].lower()
+        export = export_arg
+
     except (ValueError, IndexError) as e:
         print(f"Error parsing arguments: {e}")
         print("Usage: blender -b --python <script_name.py> -- <base_blend_file> <input_preinstanced_file> <output_glb> <pythonextension_file> <verbose> <debugsleep>")
         sys.exit(1)
+    # --- End Argument Parsing ---
 
+    # --- Log Arguments ---
     print(f"Script started with arguments:")
     print(f"1: base_blend_file: {base_blend_file}")
     print(f"2: input_preinstanced_file: {input_preinstanced_file}")
@@ -94,25 +104,27 @@ try:
     print(f"5: verbose: {verbose}")
     print(f"6: debugsleep: {debugsleep}")
     print("-" * 20)
+    # --- End Log Arguments ---
 
 
     if debugsleep:
         log_to_blender("Debug sleep mode enabled. The script will pause for debugging.")
         time.sleep(0.5) # Short initial sleep
 
+    # --- Argument Validation ---
     # Check if base_blend_file exists
     if not os.path.exists(base_blend_file):
-        log_to_blender(f"9: Error: Blend file not found: {base_blend_file}")
+        log_to_blender(f"9: Error: Blend file not found: {base_blend_file}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         sys.exit(1) # Use sys.exit for script termination
     log_to_blender(f"10: Blend file exists: {base_blend_file}")
 
     # Check if input_preinstanced_file exists
     if not os.path.exists(input_preinstanced_file):
-        log_to_blender(f"11: Error: Preinstanced file not found: {input_preinstanced_file}")
+        log_to_blender(f"11: Error: Preinstanced file not found: {input_preinstanced_file}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         sys.exit(1)
-    log_to_blender(f"12: Preinstanced file exists: {input_preinstanced_file}")
+    log_to_blender(f"12: Preinstanced file exists: {input_preinstanced_file}", to_blender_editor=True) # Log path to editor
 
     # Get the directory for output_glb and check if it exists
     output_dir = os.path.dirname(output_glb)
@@ -124,7 +136,7 @@ try:
     # The original script's logic here seems intended for a specific setup where the output dir
     # is a symlink and makedirs won't work on it, but the path *should* exist.
     if output_dir and not os.path.exists(output_dir):
-        log_to_blender(f"13: Error: Output directory does not exist (and cannot be created/checked as symlink target): {output_dir}")
+        log_to_blender(f"13: Error: Output directory does not exist (and cannot be created/checked as symlink target): {output_dir}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         sys.exit(1)
     elif output_dir:
@@ -133,24 +145,27 @@ try:
 
     # Check if pythonextension_file exists
     if not os.path.exists(pythonextension_file):
-        log_to_blender(f"16: Error: Python extension file not found: {pythonextension_file}")
+        log_to_blender(f"16: Error: Python extension file not found: {pythonextension_file}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         sys.exit(1)
     log_to_blender(f"17: Python extension file exists: {pythonextension_file}")
+    # --- End Argument Validation ---
 
     # --- Cache Clearing Step ---
-    clear_addon_cache()
+    clear_addon_cache() # Keep internal logging to console only
     # --- End Cache Clearing Step ---
 
 
+    # --- Open Blend File ---
     try:
         # Open the blend file
         bpy.ops.wm.open_mainfile(filepath=base_blend_file)
         log_to_blender(f"18: Blend file opened: {base_blend_file}")
     except Exception as e:
-        log_to_blender(f"19: Error opening blend file: {e}")
+        log_to_blender(f"19: Error opening blend file: {e}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         sys.exit(1)
+    # --- End Open Blend File ---
 
     # --- Addon Installation and Enabling ---
     log_to_blender(f"Attempting to install and enable {ADDON_MODULE_NAME} addon from {pythonextension_file}")
@@ -159,7 +174,7 @@ try:
     addon_filepath_abs = os.path.abspath(pythonextension_file)
 
     if not os.path.isfile(addon_filepath_abs):
-        log_to_blender(f"Error: Addon file not found at: {addon_filepath_abs}")
+        log_to_blender(f"Error: Addon file not found at: {addon_filepath_abs}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         sys.exit(1)
     else:
@@ -191,27 +206,28 @@ try:
 
 
     except ModuleNotFoundError as e:
-        log_to_blender(f"27: Error enabling addon {ADDON_MODULE_NAME}: {e}. Ensure the addon file is correctly installed and named ('{ADDON_MODULE_NAME}').")
+        log_to_blender(f"27: Error enabling addon {ADDON_MODULE_NAME}: {e}. Ensure the addon file is correctly installed and named ('{ADDON_MODULE_NAME}').", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         # Optionally exit here if the core addon is required for import
         # sys.exit(1)
     except Exception as e:
-        log_to_blender(f"27: An unexpected error occurred during addon installation/enabling: {e}")
+        log_to_blender(f"27: An unexpected error occurred during addon installation/enabling: {e}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         # Optionally exit here if the core addon is required for import
         # sys.exit(1)
     # --- End Addon Installation and Enabling ---
 
 
-    log_to_blender(f"Importing preinstanced file: {input_preinstanced_file}")
+    # --- Import Preinstanced File ---
+    log_to_blender(f"Importing preinstanced file: {input_preinstanced_file}", to_blender_editor=True) # Log path to editor
 
     try:
         # Call your custom import operator
         # Ensure the operator bl_idname matches what's registered by your addon
         bpy.ops.custom_import_scene.simpgame(filepath=input_preinstanced_file)
-        log_to_blender(f"32: Preinstanced file imported: {input_preinstanced_file}")
+        log_to_blender(f"32: Preinstanced file imported: {input_preinstanced_file}", to_blender_editor=True) # Log path to editor
     except Exception as e:
-        log_to_blender(f"33: Error importing preinstanced file: {e}")
+        log_to_blender(f"33: Error importing preinstanced file: {e}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         sys.exit(1) # Exit if import fails
 
@@ -219,26 +235,46 @@ try:
     # You might want to check if the collection "New Mesh" is linked and contains objects
     imported_collection = bpy.data.collections.get("New Mesh")
     if not imported_collection or not imported_collection.objects:
-        log_to_blender("Warning: No objects found in 'New Mesh' collection after import. Export might be empty.")
+        log_to_blender("Warning: No objects found in 'New Mesh' collection after import. Export might be empty.", to_blender_editor=True) # Log warning to editor
         # Decide if you want to exit here or continue to export an empty/base file
+    # --- End Import Preinstanced File ---
 
+    # --- Exporting to GLB ---
+    if export == "true":
+        log_to_blender(f"Exporting to GLB file: {output_glb}")
 
+        try:
+            # Export the scene to .glb
+            # Ensure output directory exists before exporting
+            output_dir = os.path.dirname(output_glb)
+            if output_dir and not os.path.exists(output_dir):
+                # This check was done earlier, but double-checking before export is safer
+                log_to_blender(f"Error: Output directory does not exist before GLB export: {output_dir}", to_blender_editor=True) # Log error to editor
+                if debugsleep: time.sleep(5)
+                sys.exit(1) # Cannot export if directory doesn't exist
+            elif output_dir:
+                log_to_blender(f"Output directory confirmed before export: {output_dir}")
+
+            # Select all objects you want to export if necessary,
+            # or export the entire scene if that's the default behavior of gltf exporter
+            # bpy.ops.object.select_all(action='SELECT') # Example: select all objects
+
+            bpy.ops.export_scene.gltf(filepath=output_glb, export_format='GLB', use_selection=False) # use_selection=False exports everything
+            log_to_blender(f"39: Exported to GLB file: {output_glb}")
+        except Exception as e:
+            log_to_blender(f"40: Error exporting to GLB: {e}", to_blender_editor=True) # Log error to editor
+            if debugsleep: time.sleep(5)
+            sys.exit(1) # Exit if export fails
+
+        log_to_blender("41: Export complete. Script finished successfully.")
+    # --- End Exporting to GLB ---
+
+    # --- Saving the Blend File ---
     try:
-        # Save a copy of the blend file with the imported content
-        # This saves to the path the blend file was originally opened from
-        # If you want to save to a *new* specific location, use save_as_mainfile
-        saved_blend_file_path = base_blend_file # Assuming you want to save back to the original path
+        # Save the import changes to the blend file
+        saved_blend_file_path = base_blend_file
 
         log_to_blender(f"34: Saving blend file to: {saved_blend_file_path}")
-
-        # Ensure the directory exists (redundant if opening existing file, but safe)
-        saved_blend_dir = os.path.dirname(saved_blend_file_path)
-        if not os.path.exists(saved_blend_dir):
-            # This case should ideally not happen if base_blend_file exists,
-            # unless the path is structured unexpectedly.
-            log_to_blender(f"Warning: Directory for saved blend file didn't exist, attempting to create: {saved_blend_dir}")
-            os.makedirs(saved_blend_dir, exist_ok=True) # Create the directory if it doesn't exist
-
 
         # Save the blend file
         if bpy.data.is_dirty:
@@ -246,47 +282,26 @@ try:
             log_to_blender(f"37: Saved modified blend file: {saved_blend_file_path}")
         else:
             log_to_blender("37: No changes to save to blend file.")
+            sys.exit(1)
 
     except Exception as e:
-        log_to_blender(f"38: Error saving blend file: {e}")
+        log_to_blender(f"38: Error saving blend file: {e}", to_blender_editor=True) # Log error to editor
         if debugsleep: time.sleep(5)
         # Decide if a save error should stop the GLB export
         # sys.exit(1)
+    # --- End Saving the Blend File ---
 
-    log_to_blender(f"Exporting to GLB file: {output_glb}")
-
-    try:
-        # Export the scene to .glb
-        # Ensure output directory exists before exporting
-        output_dir = os.path.dirname(output_glb)
-        if output_dir and not os.path.exists(output_dir):
-            # This check was done earlier, but double-checking before export is safer
-            log_to_blender(f"Error: Output directory does not exist before GLB export: {output_dir}")
-            if debugsleep: time.sleep(5)
-            sys.exit(1) # Cannot export if directory doesn't exist
-        elif output_dir:
-            log_to_blender(f"Output directory confirmed before export: {output_dir}")
-
-        # Select all objects you want to export if necessary,
-        # or export the entire scene if that's the default behavior of gltf exporter
-        # bpy.ops.object.select_all(action='SELECT') # Example: select all objects
-
-        bpy.ops.export_scene.gltf(filepath=output_glb, export_format='GLB', use_selection=False) # use_selection=False exports everything
-        log_to_blender(f"39: Exported to GLB file: {output_glb}")
-    except Exception as e:
-        log_to_blender(f"40: Error exporting to GLB: {e}")
-        if debugsleep: time.sleep(5)
-        sys.exit(1) # Exit if export fails
-
-    log_to_blender("41: Export complete. Script finished successfully.")
-
+# --- Main Exception Handling ---
 except Exception as e:
     # Catch any exceptions not specifically handled above
-    log_to_blender(f"45: An unexpected error occurred during script execution: {e}")
+    log_to_blender(f"45: An unexpected error occurred during script execution: {e}", to_blender_editor=True) # Log error to editor
     if debugsleep: time.sleep(5)
     sys.exit(1) # Ensure script exits on unhandled error
+# --- End Main Exception Handling ---
 
+# --- Final Cleanup ---
 finally:
     # Ensure Blender quits even if there were errors
     log_to_blender("Exiting Blender.")
     bpy.ops.wm.quit_blender()
+# --- End Final Cleanup ---
