@@ -7,11 +7,14 @@ from pathlib import Path
 
 global python_script_path, python_extension_file, asset_mapping_file, blender_exe_path
 
-global verbose, debug_sleep, export
+global verbose, debug_sleep, export, current_dir
 # Command-line argument parsing
 verbose = False
 debug_sleep = False
 export = False
+
+# path to this file
+current_dir = os.path.dirname(os.path.abspath(__file__))
 
 def read_config(file_path: str) -> tuple[str, str, str, str]:
     """Reads and displays the contents of a configuration file."""
@@ -44,7 +47,7 @@ def print_colored(message, color):
 
 def blender_processing():
     global python_script_path, python_extension_file, asset_mapping_file, blender_exe_path
-    global verbose, debug_sleep, export
+    global verbose, debug_sleep, export, current_dir
     loop_count = 0
     print_colored("Starting Blender processing using asset mapping file...", "darkgray")
     try:
@@ -87,7 +90,8 @@ def blender_processing():
                                             python_extension_file,
                                             verbose_str,
                                             debug_sleep_str,
-                                            export_str
+                                            export_str,
+                                            current_dir
                                         ]
                                         blender_command = ' '.join(f'"{a}"' if ' ' in a else a for a in args)
                                         print_colored(f"Blender command --> {blender_command}", "magenta")

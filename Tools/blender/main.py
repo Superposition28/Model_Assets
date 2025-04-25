@@ -11,7 +11,9 @@ import os
 import time
 import shutil
 import importlib
+import time
 
+global current_dir
 # Define the addon module name once
 ADDON_MODULE_NAME = 'io_import_simpson_game_fork' # <--- MAKE SURE THIS MATCHES YOUR ADDON'S MODULE NAME
 # --- End Imports and Setup ---
@@ -29,6 +31,18 @@ def log_to_blender(text: str, block_name: str = "SimpGame_Import_Log", to_blende
         else:
             text_block = bpy.data.texts[block_name]
         text_block.write(text + "\n")
+
+def log_to_file(text: str) -> None:
+    """Appends a message to a log file."""
+    global current_dir
+    time.sleep(5)
+    file_path = os.path.join(current_dir, "blend.log")
+
+    try:
+        with open(file_path, "a") as log_file:
+            log_file.write(text + "\n")
+    except Exception as e:
+        print(f"Error writing to log file: {e}")
 # --- End Logging Function ---
 
 
@@ -88,6 +102,10 @@ try:
         # get argument for optional export to glb/fbx
         export_arg = sys.argv[argv_start_index + 6].lower()
         export = export_arg
+
+        global current_dir
+        current_dir_arg = sys.argv[argv_start_index + 6].lower()
+        current_dir = current_dir_arg
 
     except (ValueError, IndexError) as e:
         print(f"Error parsing arguments: {e}")
@@ -236,6 +254,7 @@ try:
     imported_collection = bpy.data.collections.get("New Mesh")
     if not imported_collection or not imported_collection.objects:
         log_to_blender("Warning: No objects found in 'New Mesh' collection after import. Export might be empty.", to_blender_editor=True) # Log warning to editor
+        log_to_file("Warning: No objects found in 'New Mesh' collection after import. Export might be empty. for file: " + input_preinstanced_file)
         # Decide if you want to exit here or continue to export an empty/base file
     # --- End Import Preinstanced File ---
 
