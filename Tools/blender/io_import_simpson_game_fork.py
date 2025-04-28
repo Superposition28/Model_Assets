@@ -3,7 +3,7 @@
 bl_info = {
     "name": "The Simpsons Game 3d Asset Importer",
     "author": "Turk & Mister_Nebula & Samarixum",
-    "version": (1, 2, 1), # Incremented version
+    "version": (1, 2, 4), # Incremented version
     "blender": (4, 0, 0), # highest supportable version, 2.8 and above
     "location": "File > Import-Export",
     "description": "Import .rws.preinstanced, .dff.preinstanced mesh files from The Simpsons Game (PS3) and detect embedded strings.", # Updated description
@@ -49,7 +49,7 @@ def printc(message: str, colour: str | None = None) -> None:
     else:
         print(message)
 
-def get_unique_metadata_key(container, base_key):
+def get_unique_metadata_key(container: dict, base_key: str) -> str:
     """Finds a unique metadata key by appending .001, .002, etc. if needed."""
     if base_key not in container.keys():
         return base_key  # Base key is free
@@ -141,7 +141,7 @@ def strip2face(strip: list) -> list:
     """Converts a triangle strip into a list of triangle faces."""
     bPrinter(f"[Strip2Face] Converting strip of length {len(strip)} to faces", require_debug_mode=True)
     flipped = False
-    tmpTable = []
+    tmp_table = []
     # Need at least 3 indices to form a triangle strip
     if len(strip) < 3:
         bPrinter(f"[Strip2Face] Strip too short ({len(strip)}) to form faces. Skipping.")
@@ -158,13 +158,13 @@ def strip2face(strip: list) -> list:
             continue # Skip this specific face
 
         if flipped:
-            tmpTable.append((v3, v2, v1)) # Reversed winding for flipped faces
+            tmp_table.append((v3, v2, v1)) # Reversed winding for flipped faces
         else:
-            tmpTable.append((v2, v3, v1)) # Standard winding
+            tmp_table.append((v2, v3, v1)) # Standard winding
         flipped = not flipped # Toggle flipped state for the next iteration
 
-    bPrinter(f"[Strip2Face] Generated {len(tmpTable)} faces from strip.", require_debug_mode=True)
-    return tmpTable
+    bPrinter(f"[Strip2Face] Generated {len(tmp_table)} faces from strip.", require_debug_mode=True)
+    return tmp_table
 
 # --- String Detection Logic ---
 
@@ -322,6 +322,7 @@ class SimpGameImport(bpy.types.Operator, ImportHelper):
     files: CollectionProperty(type=bpy.types.PropertyGroup)
 
     def draw(self, context: bpy.types.Context) -> None:
+        # No specific import options needed in the file browser.
         pass
 
     def execute(self, context: bpy.types.Context) -> set:
@@ -662,7 +663,7 @@ class MyAddonPreferences(bpy.types.AddonPreferences):
         layout = self.layout
         layout.prop(self, "debugmode")
 
-def menu_func_import(self, context: bpy.types.Context) -> None:
+def menu_func_import(self: bpy.types.Menu, context: bpy.types.Context) -> None:
     """Adds the import option to the Blender file import menu."""
     self.layout.operator(SimpGameImport.bl_idname, text="The Simpsons Game (.rws,dff)")
 
