@@ -1,56 +1,14 @@
-import json
-import csv
 import bpy
 import os
+import csv
+import json
+from bpy_extras.io_utils import ImportHelper
+from bpy.types import Operator
 
-# Set the import file paths (adjust as needed)
-csv_import_path = bpy.path.abspath("//uv_export.csv")
-#json_import_path = bpy.path.abspath("//uv_export.json")
-
-# Check if CSV file exists
-if not os.path.exists(csv_import_path):
-    print(f"⚠️ CSV file not found: {csv_import_path}")
-else:
-    print(f"✅ CSV file found: {csv_import_path}")
-
-# Check if JSON file exists
-#if not os.path.exists(json_import_path):
-#    print(f"⚠️ JSON file not found: {json_import_path}")
-#else:
-#    print(f"✅ JSON file found: {json_import_path}")
-
-# Read the CSV data
-csv_data = {}
-if os.path.exists(csv_import_path):
-    with open(csv_import_path, 'r') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            mesh_name = row['MeshName']
-            face = row['Face']
-            loop = row['Loop']
-            u = float(row['U'])
-            v = float(row['V'])
-            collections = row['Collections'].split(', ') if row['Collections'] else []
-
-            if mesh_name not in csv_data:
-                csv_data[mesh_name] = []
-
-            csv_data[mesh_name].append({
-                'face': face,
-                'loop': loop,
-                'uv': (u, v),
-                'collections': collections
-            })
-        print(f"✅ CSV data loaded: {len(csv_data)} meshes found.")
-
-# Read the JSON data
-#json_data = {}
-#if os.path.exists(json_import_path):
-#    with open(json_import_path, 'r') as jsonfile:
-#        json_data = json.load(jsonfile)
-#    print(f"✅ JSON data loaded: {len(json_data)} meshes found.")
-
+# ------------------------
 # Function to import UV and collection data
+# ------------------------
+
 def import_uv_and_collections(mesh_name: str, mesh_data: dict):
     # Check if the object exists
     obj = bpy.context.scene.objects.get(mesh_name)
@@ -103,12 +61,73 @@ def import_uv_and_collections(mesh_name: str, mesh_data: dict):
                     print(f"✅ Mesh '{mesh_name}' added to collection '{collection_name}'.")
 
 
-# Import UV data from CSV or JSON
-for mesh_name, mesh_data in csv_data.items():
-    import_uv_and_collections(mesh_name, mesh_data)
+# ------------------------
+# Operator to open file dialog and process CSV
+# ------------------------
 
-# Import UV data from JSON (if available)
-#for mesh_name, mesh_data in json_data.items():
-#    import_uv_and_collections(mesh_name, mesh_data)
+class ImportCSVOperator(Operator, ImportHelper):
+    """Import UVs and Collections from CSV"""
+    bl_idname = "import_scene.csv_uv"  # Unique ID for the operator
+    bl_label = "Import UV CSV"          # Display name
+    filename_ext = ".csv"               # Filter file types
 
-print("🔄 UV and collection import process completed.")
+    filter_glob: bpy.props.StringProperty(
+        default="*.csv",
+        options={'HIDDEN'},
+    )
+
+    def execute(self, context):
+        csv_import_path = self.filepath
+        print(f"✅ Selected file: {csv_import_path}")
+
+        # Check if file exists
+        if not os.path.exists(csv_import_path):
+            self.report({'ERROR'}, f"File not found: {csv_import_path}")
+            return {'CANCELLED'}
+
+        # Read CSV
+        csv_data = {}
+        with open(csv_import_path, 'r', newline='') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                mesh_name = row['MeshName']
+                face = row['Face']
+                loop = row['Loop']
+                u = float(row['U'])
+                v = float(row['V'])
+                collections = row['Collections'].split(', ') if row['Collections'] else []
+
+                if mesh_name not in csv_data:
+                    csv_data[mesh_name] = []
+
+                csv_data[mesh_name].append({
+                    'face': face,
+                    'loop': loop,
+                    'uv': (u, v),
+                    'collections': collections
+                })
+
+        print(f"✅ Loaded {len(csv_data)} meshes from CSV.")
+
+        # Import UV and collections
+        for mesh_name, mesh_data in csv_data.items():
+            import_uv_and_collections(mesh_name, mesh_data)
+
+        print("🔄 UV and collection import completed.")
+
+        return {'FINISHED'}
+
+
+# ------------------------
+# Register and launch
+# ------------------------
+
+def register():
+    bpy.utils.register_class(ImportCSVOperator)
+
+def unregister():
+    bpy.utils.unregister_class(ImportCSVOperator)
+
+if __name__ == "__main__":
+    register()
+    bpy.ops.import_scene.csv_uv('INVOKE_DEFAULT')  # Launch file selector
