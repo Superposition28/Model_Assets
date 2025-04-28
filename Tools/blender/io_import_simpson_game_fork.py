@@ -28,6 +28,12 @@ from bpy.props import (
 )
 from bpy_extras.io_utils import ImportHelper
 
+# --- Global Settings ---
+global debug_mode
+debug_mode = False # Default value, can be set in the addon preferences
+
+# --- Utility Functions ---
+
 def printc(message: str, colour: str | None = None) -> None:
     """Prints a message to the console with optional colour support."""
     # Simple colour support for Windows/cmd
@@ -56,10 +62,6 @@ def get_unique_metadata_key(container, base_key):
             return new_key
         i += 1
 
-global debug_mode
-debug_mode = False # Default value, can be set in the addon preferences
-
-# --- Logging Function ---
 def bPrinter(
     text: str,
     block_name: str = "SimpGame_Importer_Log",
@@ -90,8 +92,6 @@ def bPrinter(
         # Print to the console for immediate feedback, based on the flag
         if print_to_console:
             printc(text, colour=console_colour) # Use the printc function for coloured output
-        else:
-            print("Not printing to console as print_to_console is False.")
         if log_as_metadata:
             try:
                 scene = bpy.context.scene
@@ -100,8 +100,6 @@ def bPrinter(
                 printc(f"[Log] Stored log at metadata key: {key_to_use}", colour="green")
             except Exception as e:
                 printc(f"[Log Error] Failed to store log as metadata: {e}")
-        #else:
-        #    print("Not storing log as metadata as log_as_metadata is False.")
         if to_blender_editor and hasattr(bpy.data, "texts"):
             try:
                 if block_name not in bpy.data.texts:
@@ -112,25 +110,69 @@ def bPrinter(
                 text_block.write(text + "\n")
             except Exception as e:
                 printc(f"[Log Error] Failed to write to Blender text block '{block_name}': {e}")
-        #else:
-        #    print("Not writing to Blender text editor as to_blender_editor is False.")
-        if not to_blender_editor and not print_to_console and not log_as_metadata:
-            print("No logging action chosen.")
 
-# example:
-# bPrinter("msg", to_blender_editor=True, console_colour="blue")
+def sanitize_uvs(uv_layer: bpy.types.MeshUVLoopLayer) -> None:
+    """Checks for and sanitizes non-finite UV coordinates in a UV layer."""
+    bPrinter(f"[Sanitize] Checking UV layer: {uv_layer.name}")
 
-# --- End Logging Function ---
+    # Check if uv_layer.data is accessible and has elements
+    if not uv_layer.data:
+        bPrinter(f"[Sanitize] Warning: UV layer '{uv_layer.name}' has no data.")
+        return
+
+    sanitized_count = 0
+    for uv_loop in uv_layer.data:
+        # Check for NaN or infinity
+        if not all(math.isfinite(c) for c in uv_loop.uv):
+            bPrinter(f"[Sanitize] Non-finite UV replaced with (0.0, 0.0): {uv_loop.uv[:]}", require_debug_mode=True)
+            uv_loop.uv.x = 0.0
+            uv_loop.uv.y = 0.0
+            sanitized_count += 1
+    if sanitized_count > 0:
+        bPrinter(f"[Sanitize] Sanitized {sanitized_count} non-finite UV coordinates in layer '{uv_layer.name}'.")
+
+def utils_set_mode(mode: str) -> None:
+    """Safely sets the object mode."""
+    bPrinter(f"[SetMode] Setting mode to {mode}")
+    if bpy.ops.object.mode_set.poll():
+        bpy.ops.object.mode_set(mode=mode, toggle=False)
+
+def strip2face(strip: list) -> list:
+    """Converts a triangle strip into a list of triangle faces."""
+    bPrinter(f"[Strip2Face] Converting strip of length {len(strip)} to faces", require_debug_mode=True)
+    flipped = False
+    tmpTable = []
+    # Need at least 3 indices to form a triangle strip
+    if len(strip) < 3:
+        bPrinter(f"[Strip2Face] Strip too short ({len(strip)}) to form faces. Skipping.")
+        return []
+
+    for x in range(len(strip)-2):
+        v1 = strip[x]
+        v2 = strip[x+1]
+        v3 = strip[x+2]
+        # Check for degenerate triangles (indices are the same)
+        if v1 == v2 or v1 == v3 or v2 == v3:
+            bPrinter(f"[Strip2Face] Skipping degenerate face in strip at index {x} with indices ({v1}, {v2}, {v3})", require_debug_mode=True)
+            flipped = not flipped # Still flip for correct winding of subsequent faces
+            continue # Skip this specific face
+
+        if flipped:
+            tmpTable.append((v3, v2, v1)) # Reversed winding for flipped faces
+        else:
+            tmpTable.append((v2, v3, v1)) # Standard winding
+        flipped = not flipped # Toggle flipped state for the next iteration
+
+    bPrinter(f"[Strip2Face] Generated {len(tmpTable)} faces from strip.", require_debug_mode=True)
+    return tmpTable
+
+# --- String Detection Logic ---
 
 # Characters typically allowed in programmer-defined strings
 ALLOWED_CHARS = string.ascii_letters + string.digits + '_-.'
 ALLOWED_CHARS_BYTES = ALLOWED_CHARS.encode('ascii') # Convert allowed chars to bytes
 
-# --- Configuration for String Detection ---
-# Fixed Signatures to check (often indicate block headers)
-# You need to determine the correct signature bytes (as bytes)
-# and the relative offset (in bytes) from the SIGNATURE START to the STRING START.
-# Use your previous script's output and a hex editor to find these.
+# Configuration for String Detection
 FIXED_SIGNATURES_TO_CHECK = [
     {'signature': bytes.fromhex('0211010002000000'), 'relative_string_offset': 16, 'description': 'String Block Header (General, 8 bytes)'},
     {'signature': bytes.fromhex('0211010002000000140000002d00021c'), 'relative_string_offset': 16, 'description': 'String Block Header (Subtype A, 16 bytes)'},
@@ -144,7 +186,6 @@ MIN_EXTRACTED_STRING_LENGTH = 4
 CONTEXT_SIZE = 16 # Bytes around the SIGNATURE / START marker to show
 STRING_CONTEXT_SIZE = 5 # Bytes around the STRING to show
 
-# --- Adapted String Finding Function ---
 def find_strings_by_signature_in_data(data: bytes, signatures_info: list, max_string_length: int, min_string_length: int, context_bytes: int, string_context_bytes: int) -> list:
     """
     Searches binary data for specific byte signatures and attempts to extract
@@ -266,38 +307,10 @@ def find_strings_by_signature_in_data(data: bytes, signatures_info: list, max_st
     bPrinter("[String Search] Fixed signature search complete.")
     return results
 
-
-def sanitize_uvs(uv_layer: bpy.types.MeshUVLoopLayer) -> None:
-    """Checks for and sanitizes non-finite UV coordinates in a UV layer."""
-    bPrinter(f"[Sanitize] Checking UV layer: {uv_layer.name}")
-
-    # Check if uv_layer.data is accessible and has elements
-    if not uv_layer.data:
-        bPrinter(f"[Sanitize] Warning: UV layer '{uv_layer.name}' has no data.")
-        return
-
-    # Note: Sanitize is now mostly done during assignment in the main loop for performance,
-    # but this could catch any remaining issues or be a fallback.
-    sanitized_count = 0
-    for uv_loop in uv_layer.data:
-        # Check for NaN or infinity
-        if not all(math.isfinite(c) for c in uv_loop.uv):
-            bPrinter(f"[Sanitize] Non-finite UV replaced with (0.0, 0.0): {uv_loop.uv[:]}", require_debug_mode=True)
-            uv_loop.uv.x = 0.0
-            uv_loop.uv.y = 0.0
-            sanitized_count += 1
-    if sanitized_count > 0:
-        bPrinter(f"[Sanitize] Sanitized {sanitized_count} non-finite UV coordinates in layer '{uv_layer.name}'.")
-
-
-
-def utils_set_mode(mode: str) -> None:
-    """Safely sets the object mode."""
-    bPrinter(f"[SetMode] Setting mode to {mode}")
-    if bpy.ops.object.mode_set.poll():
-        bpy.ops.object.mode_set(mode=mode, toggle=False)
+# --- Blender Addon Components ---
 
 class SimpGameImport(bpy.types.Operator, ImportHelper):
+    """Blender Operator for importing The Simpsons Game files."""
     bl_idname = "custom_import_scene.simpgame"
     bl_label = "Import"
     bl_options = {'PRESET', 'UNDO'}
@@ -312,6 +325,7 @@ class SimpGameImport(bpy.types.Operator, ImportHelper):
         pass
 
     def execute(self, context: bpy.types.Context) -> set:
+        """Executes the import process."""
         bPrinter("== The Simpsons Game Import Log ==", to_blender_editor=True, log_as_metadata=False) # Log header to editor
         bPrinter(f"Importing file: {self.filepath}", to_blender_editor=True, log_as_metadata=True)
         bPrinter(f"File size: {os.path.getsize(self.filepath)} bytes", to_blender_editor=True, log_as_metadata=False)
@@ -345,7 +359,6 @@ class SimpGameImport(bpy.types.Operator, ImportHelper):
         for item in string_results:
             if item['type'] == 'fixed_signature_string' and item['string_found']:
                 found_string_count += 1
-                # Simplified logging: File path, string offset, and the string itself
                 bPrinter(f"{item['string_offset']:08X}: {item['string']}", to_blender_editor=True)
 
         if found_string_count == 0:
@@ -361,377 +374,279 @@ class SimpGameImport(bpy.types.Operator, ImportHelper):
         cur_collection = bpy.data.collections.new("New Mesh")
         bpy.context.scene.collection.children.link(cur_collection)
 
-        # Using re.compile on the full data bytes is fine for finding chunk starts
         mshBytes = re.compile(b"\x33\xEA\x00\x00....\x2D\x00\x02\x1C", re.DOTALL)
         mesh_iter = 0
 
-        # Use io.BytesIO to treat the byte data like a file for seeking/reading
         data_io = io.BytesIO(tmpRead)
 
         for x in mshBytes.finditer(tmpRead):
-            data_io.seek(x.end() + 4) # Use data_io for seeking/reading within the matched chunk
-            try: # Added error handling for reading initial chunk data
+            data_io.seek(x.end() + 4)
+            try:
                 FaceDataOff = int.from_bytes(data_io.read(4), byteorder='little')
                 MeshDataSize = int.from_bytes(data_io.read(4), byteorder='little')
-                MeshChunkStart = data_io.tell() # Use data_io.tell()
-                data_io.seek(0x14, 1) # Use data_io.seek()
+                MeshChunkStart = data_io.tell()
+                data_io.seek(0x14, 1)
                 mDataTableCount = int.from_bytes(data_io.read(4), byteorder='big')
                 mDataSubCount = int.from_bytes(data_io.read(4), byteorder='big')
-                bPrinter(f"[Mesh {mesh_iter}] Found chunk at {x.start():08X}. FaceDataOff: {FaceDataOff}, MeshDataSize: {MeshDataSize}, mDataTableCount: {mDataTableCount}, mDataSubCount: {mDataSubCount}") # Log chunk info to console
+                bPrinter(f"[Mesh {mesh_iter}] Found chunk at {x.start():08X}. FaceDataOff: {FaceDataOff}, MeshDataSize: {MeshDataSize}, mDataTableCount: {mDataTableCount}, mDataSubCount: {mDataSubCount}")
 
             except Exception as e:
-                bPrinter(f"[Error] Failed to read mesh chunk header data at {x.start():08X}: {e}") # Log error to editor
-                continue # Skip this chunk and try to find the next one
+                bPrinter(f"[Error] Failed to read mesh chunk header data at {x.start():08X}: {e}")
+                continue
 
             for i in range(mDataTableCount):
-                data_io.seek(4, 1) # Use data_io
-                data_io.read(4) # Reading and discarding 4 bytes using data_io
+                data_io.seek(4, 1)
+                data_io.read(4)
 
-            mDataSubStart = data_io.tell() # Use data_io.tell()
+            mDataSubStart = data_io.tell()
 
             for i in range(mDataSubCount):
-                try: # Added error handling for reading sub-mesh data
-                    data_io.seek(mDataSubStart + i * 0xC + 8) # Use data_io
-                    offset = int.from_bytes(data_io.read(4), byteorder='big') # Use data_io
-                    data_io.seek(offset + MeshChunkStart + 0xC) # Use data_io
-                    VertCountDataOff = int.from_bytes(data_io.read(4), byteorder='big') + MeshChunkStart # Use data_io
-                    data_io.seek(VertCountDataOff) # Use data_io
-                    VertChunkTotalSize = int.from_bytes(data_io.read(4), byteorder='big') # Use data_io
-                    VertChunkSize = int.from_bytes(data_io.read(4), byteorder='big') # Use data_io
+                try:
+                    data_io.seek(mDataSubStart + i * 0xC + 8)
+                    offset = int.from_bytes(data_io.read(4), byteorder='big')
+                    data_io.seek(offset + MeshChunkStart + 0xC)
+                    VertCountDataOff = int.from_bytes(data_io.read(4), byteorder='big') + MeshChunkStart
+                    data_io.seek(VertCountDataOff)
+                    VertChunkTotalSize = int.from_bytes(data_io.read(4), byteorder='big')
+                    VertChunkSize = int.from_bytes(data_io.read(4), byteorder='big')
                     if VertChunkSize <= 0:
                         bPrinter(f"[Mesh {mesh_iter}_{i}] Warning: VertChunkSize is non-positive ({VertChunkSize}). Skipping mesh part.")
                         continue
                     VertCount = int(VertChunkTotalSize / VertChunkSize)
-                    data_io.seek(8, 1) # Skipping 8 bytes (possibly normals offset and size) using data_io
-                    VertexStart = int.from_bytes(data_io.read(4), byteorder='big') + FaceDataOff + MeshChunkStart # Use data_io
-                    data_io.seek(0x14, 1) # Skipping 0x14 bytes using data_io
-                    # Ensure enough bytes are available before reading FaceCount
+                    data_io.seek(8, 1)
+                    VertexStart = int.from_bytes(data_io.read(4), byteorder='big') + FaceDataOff + MeshChunkStart
+                    data_io.seek(0x14, 1)
                     face_count_bytes_offset = data_io.tell()
                     if face_count_bytes_offset + 4 > len(tmpRead):
                         bPrinter(f"[Mesh {mesh_iter}_{i}] Error: Insufficient data to read FaceCount at offset {face_count_bytes_offset:08X}. Skipping mesh part.")
                         continue
-                    FaceCount = int(int.from_bytes(data_io.read(4), byteorder='big') / 2) # FaceCount seems to be num_indices / 2, use data_io
-                    data_io.seek(4, 1) # Skipping 4 bytes (possibly material index offset) using data_io
-                    FaceStart = int.from_bytes(data_io.read(4), byteorder='big') + FaceDataOff + MeshChunkStart # Use data_io
+                    FaceCount = int(int.from_bytes(data_io.read(4), byteorder='big') / 2)
+                    data_io.seek(4, 1)
+                    FaceStart = int.from_bytes(data_io.read(4), byteorder='big') + FaceDataOff + MeshChunkStart
 
                     bPrinter(f"[MeshPart {mesh_iter}_{i}] Reading data. VertCount: {VertCount}, FaceCount: {FaceCount}, VertexStart: {VertexStart:08X}, FaceStart: {FaceStart:08X}")
 
                 except Exception as e:
                     bPrinter(f"[Error] Failed to read sub-mesh header data for part {mesh_iter}_{i}: {e}")
-                    continue # Continue to the next sub-mesh if data reading fails
+                    continue
 
-                # Read Face Indices
-                data_io.seek(FaceStart) # Use data_io
+                data_io.seek(FaceStart)
                 StripList = []
                 tmpList = []
-                try: # Added error handling for reading face indices
-                    # Check if FaceStart is within bounds to prevent excessive reading attempts
+                try:
                     if FaceStart < 0 or FaceStart >= len(tmpRead):
                         bPrinter(f"[MeshPart {mesh_iter}_{i}] Error: FaceStart offset {FaceStart:08X} is out of bounds. Skipping face data read.")
-                        FaceCount = 0 # Effectively skip face processing
+                        FaceCount = 0
                     else:
-                        data_io.seek(FaceStart) # Reset seek in case bounds check changed it
-                        # Ensure enough data is available for FaceCount indices (each 2 bytes)
+                        data_io.seek(FaceStart)
                         if FaceStart + FaceCount * 2 > len(tmpRead):
                             bPrinter(f"[MeshPart {mesh_iter}_{i}] Warning: Predicted face data size ({FaceCount * 2} bytes) exceeds file bounds from FaceStart {FaceStart:08X}. Reading available data.")
-                            # Adjust FaceCount based on available data
                             FaceCount = (len(tmpRead) - FaceStart) // 2
                             bPrinter(f"[MeshPart {mesh_iter}_{i}] Adjusted FaceCount to {FaceCount} based on available data.")
 
-
                     for f in range(FaceCount):
-                        # Ensure enough data is available for the next index
                         if data_io.tell() + 2 > len(tmpRead):
                             bPrinter(f"[MeshPart {mesh_iter}_{i}] Warning: Hit end of data while reading face index {f}. Stopping face index read.")
-                            break # Stop reading indices if not enough data
-                        Indice = int.from_bytes(data_io.read(2), byteorder='big') # Use data_io
+                            break
+                        Indice = int.from_bytes(data_io.read(2), byteorder='big')
                         if Indice == 65535:
-                            if tmpList: # Only append if tmpList is not empty
+                            if tmpList:
                                 StripList.append(tmpList.copy())
                             tmpList.clear()
                         else:
                             tmpList.append(Indice)
-                    if tmpList: # Append the last strip if it doesn't end with 65535
+                    if tmpList:
                         StripList.append(tmpList.copy())
                 except Exception as e:
-                    bPrinter(f"[Error] Failed to read face indices for mesh part {mesh_iter}_{i}: {e}") # Log error to editor
-                    # Decide whether to continue processing this mesh part without faces or skip
-                    continue # Skipping this mesh part if face indices can't be read
+                    bPrinter(f"[Error] Failed to read face indices for mesh part {mesh_iter}_{i}: {e}")
+                    continue
 
                 FaceTable = []
                 for f in StripList:
-                    FaceTable.extend(strip2face(f)) # Use extend to add faces from strip2face
+                    FaceTable.extend(strip2face(f))
 
                 VertTable = []
                 UVTable = []
                 CMTable = []
-                try: # Added error handling for reading vertex data
-                    # Check if VertexStart is within bounds
+                try:
                     if VertexStart < 0 or VertexStart >= len(tmpRead):
                         bPrinter(f"[MeshPart {mesh_iter}_{i}] Error: VertexStart offset {VertexStart:08X} is out of bounds. Skipping vertex data read.")
-                        VertCount = 0 # Effectively skip vertex processing
+                        VertCount = 0
 
                     for v in range(VertCount):
                         vert_data_start = VertexStart + v * VertChunkSize
-                        # Check if there's enough data for this vertex chunk
                         if vert_data_start + VertChunkSize > len(tmpRead):
                             bPrinter(f"[MeshPart {mesh_iter}_{i}] Warning: Hit end of data while reading vertex {v}. Stopping vertex read.")
-                            # Adjust VertCount for subsequent loops if necessary, although breaking works for current loop
                             break
 
-                        data_io.seek(vert_data_start) # Use data_io
+                        data_io.seek(vert_data_start)
 
-                        # Ensure enough data for vertex coords
-                        if data_io.tell() + 12 > len(tmpRead): # 4 bytes/float * 3 floats = 12 bytes
+                        if data_io.tell() + 12 > len(tmpRead):
                             bPrinter(f"[MeshPart {mesh_iter}_{i}] Warning: Insufficient data for vertex coords at {data_io.tell():08X} for vertex {v}. Skipping.")
-                            continue # Skip this vertex
+                            continue
 
-                        TempVert = struct.unpack('>fff', data_io.read(4 * 3)) # Use data_io
+                        TempVert = struct.unpack('>fff', data_io.read(4 * 3))
                         VertTable.append(TempVert)
 
-                        # Ensure enough data for UVs
                         uv_offset = vert_data_start + VertChunkSize - 16
-                        if uv_offset < 0 or uv_offset + 8 > len(tmpRead): # 4 bytes/float * 2 floats = 8 bytes
+                        if uv_offset < 0 or uv_offset + 8 > len(tmpRead):
                             bPrinter(f"[MeshPart {mesh_iter}_{i}] Warning: Insufficient data for UV coords at {uv_offset:08X} for vertex {v}. Skipping UV.")
-                            TempUV = (0.0, 0.0) # Assign default UVs
+                            TempUV = (0.0, 0.0)
                         else:
-                            data_io.seek(uv_offset) # Use data_io
-                            TempUV = struct.unpack('>ff', data_io.read(4 * 2)) # Use data_io
-                        UVTable.append((TempUV[0], 1 - TempUV[1])) # Keep original UVs, apply V inversion
+                            data_io.seek(uv_offset)
+                            TempUV = struct.unpack('>ff', data_io.read(4 * 2))
+                        UVTable.append((TempUV[0], 1 - TempUV[1]))
 
-                        # Ensure enough data for CMs
                         cm_offset = vert_data_start + VertChunkSize - 8
-                        if cm_offset < 0 or cm_offset + 8 > len(tmpRead): # 4 bytes/float * 2 floats = 8 bytes
+                        if cm_offset < 0 or cm_offset + 8 > len(tmpRead):
                             bPrinter(f"[MeshPart {mesh_iter}_{i}] Warning: Insufficient data for CM coords at {cm_offset:08X} for vertex {v}. Skipping CM.")
-                            TempCM = (0.0, 0.0) # Assign default CMs
+                            TempCM = (0.0, 0.0)
                         else:
-                            data_io.seek(cm_offset) # Use data_io
-                            TempCM = struct.unpack('>ff', data_io.read(4 * 2)) # Use data_io
-                        CMTable.append((TempCM[0], 1 - TempCM[1])) # Keep original CMs, apply V inversion
-
+                            data_io.seek(cm_offset)
+                            TempCM = struct.unpack('>ff', data_io.read(4 * 2))
+                        CMTable.append((TempCM[0], 1 - TempCM[1]))
 
                     bPrinter(f"[MeshPart {mesh_iter}_{i}] Read {len(VertTable)} vertices, {len(UVTable)} UVs, {len(CMTable)} CMs.")
 
                 except Exception as e:
-                    bPrinter(f"[Error] Failed to read vertex data for mesh part {mesh_iter}_{i}: {e}") # Log error to editor
-                    continue # Skipping this mesh part if vertex data can't be read
+                    bPrinter(f"[Error] Failed to read vertex data for mesh part {mesh_iter}_{i}: {e}")
+                    continue
 
-                # Check if we have data to create a mesh
                 if not VertTable or not FaceTable:
                     bPrinter(f"[MeshPart {mesh_iter}_{i}] Warning: No valid vertices or faces read for mesh part. Skipping mesh creation.")
-                    continue # Skip creating mesh if no data
+                    continue
 
-                mesh1 = bpy.data.meshes.new(f"Mesh_{mesh_iter}_{i}") # Name mesh data block
+                mesh1 = bpy.data.meshes.new(f"Mesh_{mesh_iter}_{i}")
                 mesh1.use_auto_smooth = True
-                obj = bpy.data.objects.new(f"Mesh_{mesh_iter}_{i}", mesh1) # Name object
+                obj = bpy.data.objects.new(f"Mesh_{mesh_iter}_{i}", mesh1)
                 cur_collection.objects.link(obj)
                 bpy.context.view_layer.objects.active = obj
                 obj.select_set(True)
                 mesh = bpy.context.object.data
                 bm = bmesh.new()
 
-                # Add vertices to BMesh
                 for v_co in VertTable:
                     bm.verts.new(v_co)
                 bm.verts.ensure_lookup_table()
                 bPrinter(f"[MeshPart {mesh_iter}_{i}] Added {len(bm.verts)} vertices to BMesh.")
 
-                # Create faces in BMesh
                 faces_created_count = 0
                 for f_indices in FaceTable:
                     try:
-                        # Ensure indices are within the valid range
                         valid_face = True
                         face_verts = []
                         for idx in f_indices:
                             if idx < 0 or idx >= len(bm.verts):
-                                bPrinter(f"[FaceError] Invalid vertex index {idx} in face {f_indices}. Skipping face.") # Log error to editor
+                                bPrinter(f"[FaceError] Invalid vertex index {idx} in face {f_indices}. Skipping face.")
                                 valid_face = False
                                 break
                             face_verts.append(bm.verts[idx])
 
                         if valid_face:
-                            # Check if the face already exists to prevent duplicates
-                            # (This is a simplified check, might not catch all cases)
-                            existing_face = None
                             try:
-                                # Check if a face with these vertices already exists (Blender internal check)
-                                # This can sometimes throw an error if the verts don't form a valid loop yet
-                                # bm.faces.get([v.index for v in face_verts]) # This doesn't work directly for checking existence before adding
-                                # A better check might involve iterating or using vertex hashing, but for simplicity, rely on bm.faces.new's behavior or basic index checks.
-                                pass
-                            except Exception:
-                                # Ignore potential errors during check
-                                pass
-
-                            try:
-                                # Only add if it doesn't cause errors (e.g., non-planar, duplicate edge)
                                 bm.faces.new(face_verts)
                                 faces_created_count += 1
                             except ValueError as e:
-                                # Catch cases where face creation fails (e.g., non-manifold, duplicate)
                                 bPrinter(f"[FaceWarning] Failed to create face {f_indices} ({len(face_verts)} verts): {e}. Skipping.")
                             except Exception as e:
                                 bPrinter(f"[FaceError] Unexpected error creating face {f_indices}: {e}. Skipping.")
 
-
                     except Exception as e:
-                        bPrinter(f"[FaceError] Unhandled error processing face indices {f_indices}: {e}") # Log error to editor
+                        bPrinter(f"[FaceError] Unhandled error processing face indices {f_indices}: {e}")
                         continue
 
                 bPrinter(f"[MeshPart {mesh_iter}_{i}] Attempted to create {len(FaceTable)} faces, successfully created {faces_created_count}.")
 
-                # Validate bmesh before accessing layers and assigning UVs
                 if not bm.faces:
-                    bPrinter(f"[BMeshWarning] No faces created for mesh {mesh_iter}_{i}. Skipping UV assignment and further processing for this mesh part.") # Log warning to editor
+                    bPrinter(f"[BMeshWarning] No faces created for mesh {mesh_iter}_{i}. Skipping UV assignment and further processing for this mesh part.")
                     bm.free()
-                    # Ensure object and mesh data are cleaned up if no faces were created
-                    if mesh1: # Check if mesh data was created
-                        if mesh1.users == 1: # Check if only this object uses it
+                    if mesh1:
+                        if mesh1.users == 1:
                             bpy.data.meshes.remove(mesh1)
                             bPrinter(f"[BMeshWarning] Removed unused mesh data block '{mesh1.name}'.")
-                    if obj: # Check if object was created
-                        if obj.users == 1: # Check if only the collection links it
-                            # Remove from collection and delete
+                    if obj:
+                        if obj.users == 1:
                             for col in bpy.data.collections:
                                 if obj.name in col.objects:
                                     col.objects.unlink(obj)
                             bpy.data.objects.remove(obj)
                             bPrinter(f"[BMeshWarning] Removed unused object '{obj.name}'.")
 
-                    continue # Skip to the next mesh part
+                    continue
 
-                # Ensure UV layers exist before accessing them
-                # Check if the layers already exist first to avoid errors if run multiple times
-                uv_layer = bm.loops.layers.uv.get("uvmap") # Get default UV layer or None
+                uv_layer = bm.loops.layers.uv.get("uvmap")
                 if uv_layer is None:
-                    uv_layer = bm.loops.layers.uv.new("uvmap") # Create if it doesn't exist
+                    uv_layer = bm.loops.layers.uv.new("uvmap")
                     bPrinter("[Info] Created new 'uvmap' layer.")
-                else:
-                    # Clear existing data if layer already existed? Not strictly needed for new bmesh.
-                    pass
 
-                cm_layer = bm.loops.layers.uv.get("CM_uv") # Get CM UV layer or None
+                cm_layer = bm.loops.layers.uv.get("CM_uv")
                 if cm_layer is None:
-                    cm_layer = bm.loops.layers.uv.new("CM_uv") # Create if it doesn't exist
+                    cm_layer = bm.loops.layers.uv.new("CM_uv")
                     bPrinter("[Info] Created new 'CM_uv' layer.")
-                else:
-                    # Clear existing data if layer already existed?
-                    pass
 
                 uv_layer_name = uv_layer.name
                 cm_layer_name = cm_layer.name
 
-                # Assign UVs to loops and perform basic sanitization during assignment
-                # This is done per loop, so it handles shared vertices correctly
                 uv_assigned_count = 0
                 cm_assigned_count = 0
                 for f in bm.faces:
-                    f.smooth = True # Set face to smooth shading
+                    f.smooth = True
                     for l in f.loops:
                         vert_index = l.vert.index
                         if vert_index >= len(UVTable) or vert_index >= len(CMTable):
-                            bPrinter(f"[UVError] Vertex index {vert_index} out of range for UV/CM tables ({len(UVTable)}/{len(CMTable)}) during assignment for mesh part {mesh_iter}_{i}. Skipping UV assignment for this loop.") # Log error to editor
-                            # Assign default (0,0) UVs to avoid errors with missing data
+                            bPrinter(f"[UVError] Vertex index {vert_index} out of range for UV/CM tables ({len(UVTable)}/{len(CMTable)}) during assignment for mesh part {mesh_iter}_{i}. Skipping UV assignment for this loop.")
                             l[uv_layer].uv = (0.0, 0.0)
                             l[cm_layer].uv = (0.0, 0.0)
                             continue
 
                         try:
-                            # Assign main UVs
                             uv_coords = UVTable[vert_index]
-                            # Sanitize main UVs during assignment
                             if all(math.isfinite(c) for c in uv_coords):
                                 l[uv_layer].uv = uv_coords
                                 uv_assigned_count += 1
                             else:
                                 bPrinter(f"[Inline-Sanitize] Non-finite main UV for vertex {vert_index} in loop of mesh part {mesh_iter}_{i}. Assigning (0.0, 0.0).", require_debug_mode=True)
                                 l[uv_layer].uv = (0.0, 0.0)
-                                uv_assigned_count += 1 # Count even if sanitized to default
+                                uv_assigned_count += 1
 
-                            # Assign CM UVs
                             cm_coords = CMTable[vert_index]
-                            # Sanitize CM UVs during assignment
                             if all(math.isfinite(c) for c in cm_coords):
                                 l[cm_layer].uv = cm_coords
                                 cm_assigned_count += 1
                             else:
                                 bPrinter(f"[Inline-Sanitize] Non-finite CM UV for vertex {vert_index} in loop of mesh part {mesh_iter}_{i}. Assigning (0.0, 0.0).", require_debug_mode=True)
                                 l[cm_layer].uv = (0.0, 0.0)
-                                cm_assigned_count += 1 # Count even if sanitized to default
+                                cm_assigned_count += 1
 
                         except Exception as e:
-                            bPrinter(f"[UVError] Failed to assign UV/CM for vertex {vert_index} in loop of mesh part {mesh_iter}_{i}: {e}") # Log error to editor
-                            # Assign default (0,0) UVs to prevent potential issues even on error
+                            bPrinter(f"[UVError] Failed to assign UV/CM for vertex {vert_index} in loop of mesh part {mesh_iter}_{i}: {e}")
                             l[uv_layer].uv = (0.0, 0.0)
                             l[cm_layer].uv = (0.0, 0.0)
-                            continue # Continue to the next loop
-
+                            continue
 
                 bPrinter(f"[MeshPart {mesh_iter}_{i}] Assigned UVs to {uv_assigned_count} loops, CM UVs to {cm_assigned_count} loops.")
 
-
-                # Finish BMesh and assign to mesh data
                 bm.to_mesh(mesh)
-                bm.free() # Free the bmesh as it's no longer needed
+                bm.free()
                 bPrinter(f"[MeshPart {mesh_iter}_{i}] BMesh converted to mesh data.")
 
-
-                # Perform a final sanitize check on the created UV layers in mesh data
-                # Note: The assignment loop already sanitizes, so this is a fallback/verification
                 if uv_layer_name in mesh.uv_layers:
-                    # Don't pass to_blender_editor=True here, sanitize_uvs logs its own findings to editor
                     sanitize_uvs(mesh.uv_layers[uv_layer_name])
                 else:
-                    bPrinter(f"[Sanitize] Warning: Main UV layer '{uv_layer_name}' not found on mesh data block after to_mesh for mesh {mesh_iter}_{i}.") # Log warning to editor
+                    bPrinter(f"[Sanitize] Warning: Main UV layer '{uv_layer_name}' not found on mesh data block after to_mesh for mesh {mesh_iter}_{i}.")
 
                 if cm_layer_name in mesh.uv_layers:
-                    # Don't pass to_blender_editor=True here
                     sanitize_uvs(mesh.uv_layers[cm_layer_name])
                 else:
-                    bPrinter(f"[Sanitize] Warning: CM UV layer '{cm_layer_name}' not found on mesh data block after to_mesh for mesh {mesh_iter}_{i}.") # Log warning to editor
+                    bPrinter(f"[Sanitize] Warning: CM UV layer '{cm_layer_name}' not found on mesh data block after to_mesh for mesh {mesh_iter}_{i}.")
 
-                # Apply rotation
-                obj.rotation_euler = (1.5707963705062866, 0, 0) # Rotate 90 degrees around X (pi/2)
+                obj.rotation_euler = (1.5707963705062866, 0, 0)
                 bPrinter(f"[MeshPart {mesh_iter}_{i}] Object created '{obj.name}' and rotated.")
 
             mesh_iter += 1
 
-        # data_io is automatically closed when the function exits or garbage collected
-        # cur_file is also implicitly closed by the 'with open' block
-
-        bPrinter("== Import Complete ==", to_blender_editor=True) # Log completion to editor
+        bPrinter("== Import Complete ==", to_blender_editor=True)
         return {'FINISHED'}
-
-def strip2face(strip: list) -> list:
-    """Converts a triangle strip into a list of triangle faces."""
-    bPrinter(f"[Strip2Face] Converting strip of length {len(strip)} to faces", require_debug_mode=True)
-    flipped = False
-    tmpTable = []
-    # Need at least 3 indices to form a triangle strip
-    if len(strip) < 3:
-        bPrinter(f"[Strip2Face] Strip too short ({len(strip)}) to form faces. Skipping.")
-        return []
-
-    for x in range(len(strip)-2):
-        v1 = strip[x]
-        v2 = strip[x+1]
-        v3 = strip[x+2]
-        # Check for degenerate triangles (indices are the same)
-        if v1 == v2 or v1 == v3 or v2 == v3:
-            bPrinter(f"[Strip2Face] Skipping degenerate face in strip at index {x} with indices ({v1}, {v2}, {v3})")
-            # Even if degenerate, the 'flipped' state still needs to toggle for the next potential face
-            flipped = not flipped # Still flip for correct winding of subsequent faces
-            continue # Skip this specific face
-
-        if flipped:
-            tmpTable.append((v3, v2, v1)) # Reversed winding for flipped faces
-        else:
-            tmpTable.append((v2, v3, v1)) # Standard winding
-        flipped = not flipped # Toggle flipped state for the next iteration
-
-    bPrinter(f"[Strip2Face] Generated {len(tmpTable)} faces from strip.", require_debug_mode=True)
-    return tmpTable
 
 class MyAddonPreferences(bpy.types.AddonPreferences):
     """Defines preferences for the addon."""
@@ -749,28 +664,36 @@ class MyAddonPreferences(bpy.types.AddonPreferences):
 
 def menu_func_import(self, context: bpy.types.Context) -> None:
     """Adds the import option to the Blender file import menu."""
-    bPrinter("[MenuFunc] Adding import option to menu")
     self.layout.operator(SimpGameImport.bl_idname, text="The Simpsons Game (.rws,dff)")
+
+# --- Registration ---
+
+classes = (
+    SimpGameImport,
+    MyAddonPreferences,
+)
 
 def register() -> None:
     """Registers the addon classes and menu functions."""
-    bPrinter("[Register] Registering import operator and menu function")
-    bpy.utils.register_class(SimpGameImport)
+    bPrinter("[Register] Registering addon components")
+    for cls in classes:
+        bpy.utils.register_class(cls)
     bpy.types.TOPBAR_MT_file_import.append(menu_func_import)
 
 def unregister() -> None:
     """Unregisters the addon classes and menu functions."""
-    bPrinter("[Unregister] Unregistering import operator and menu function")
-    try:
-        bpy.utils.unregister_class(SimpGameImport)
-    except RuntimeError as e:
-        bPrinter(f"[Unregister] Warning: {e}", to_blender_editor=True) # Log warning to editor
+    bPrinter("[Unregister] Unregistering addon components")
     try:
         bpy.types.TOPBAR_MT_file_import.remove(menu_func_import)
     except Exception as e:
-        bPrinter(f"[Unregister] Warning: {e}", to_blender_editor=True) # Log warning to editor
+        bPrinter(f"[Unregister] Warning removing menu item: {e}", to_blender_editor=True)
 
-# This allows the script to be run directly in Blender's text editor
+    for cls in reversed(classes):
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError as e:
+            bPrinter(f"[Unregister] Warning unregistering class {cls.__name__}: {e}", to_blender_editor=True)
+
 if __name__ == "__main__":
     bPrinter("[Main] Running as main script. Registering.")
     register()
