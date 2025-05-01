@@ -190,7 +190,7 @@ def run():
     working_dir = current_dir + os.sep + ".." + os.sep + ".."
 
     printc(f"Working Directory: {working_dir}", "cyan")
-    preinstanced_dir = os.path.abspath(os.path.join(working_dir, "..", "QBMS_TSG", "GameFiles", "quickbms_out"))
+    preinstanced_dir = os.path.abspath(os.path.join(working_dir, "..", "Extract", "GameFiles", "quickbms_out"))
     blend_dir = os.path.join(working_dir, "GameFiles", "blend_out")
     glb_dir = os.path.join(working_dir, "GameFiles", "blend_out_glb")
     output_dir = os.path.join(working_dir, "Tools", "process")
