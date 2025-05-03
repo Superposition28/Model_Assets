@@ -105,7 +105,7 @@ def create_module_conf(module_name: str, project_ini_path: Path, mode: str, modu
 
     with open(conf_path, 'w') as f:
         conf.write(f)
-    logger.info(f"Created bmsConf.ini for module '{module_name}' at {conf_path}")
+    logger.info(f"Created Extract.ini for module '{module_name}' at {conf_path}")
 
     return conf_path.resolve(), conf
 
