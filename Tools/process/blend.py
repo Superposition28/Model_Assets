@@ -77,7 +77,8 @@ def blender_processing():
                                     if os.path.isfile(preinstanced_symlink_file):
                                         verbose_str = "true" if verbose else "false"
                                         debug_sleep_str = "true" if debug_sleep else "false"
-                                        export_str = "true" if export else "false"
+                                        # convert set to string for command line argument
+                                        export_str = ", ".join(export) if export else ""
                                         print_colored("# Start Blender Output", "gray")
                                         args = [
                                             blender_exe_path,
@@ -152,7 +153,7 @@ def blender_processing():
         print(ex)
         sys.exit(1)
 
-def main(verbose_param: bool = False, debug_sleep_param: bool = False, export_param: bool = False) -> None:
+def main(verbose_param: bool = False, debug_sleep_param: bool = False, export_param: set = None) -> None:
     """Main function to orchestrate the Blender processing."""
 
     global verbose, debug_sleep, export
@@ -170,19 +171,6 @@ def main(verbose_param: bool = False, debug_sleep_param: bool = False, export_pa
     print_colored("Processing complete.", "green")
 
 if __name__ == "__main__":
-    verbose, debug_sleep, export = False, False, True  # Default values
+    verbose, debug_sleep, export = False, False, set()  # Default values
 
-    args = sys.argv[1:]
-    if len(args) > 0:
-        for arg in args:
-            if arg == "--verbose":
-                verbose = True
-            elif arg == "--debug_sleep":
-                debug_sleep = True
-            elif arg == "--export":
-                export = True
-            else:
-                print_colored(f"Warning: Unknown argument '{arg}' provided.", "yellow")
-    else:
-        print_colored("No command-line arguments provided.", "yellow")
     main(verbose, debug_sleep, export)

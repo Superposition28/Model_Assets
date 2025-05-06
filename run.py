@@ -7,7 +7,7 @@ from .Tools.process import init
 from .Tools.process import blend
 
 
-def main(verbose: bool, debug_sleep: bool, export: bool) -> None:
+def main(verbose: bool, debug_sleep: bool, export: set) -> None:
     """Main function to execute init and blend processes."""
     print("Running init")
     init.main()

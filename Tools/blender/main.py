@@ -94,17 +94,25 @@ try:
         pythonextension_file = sys.argv[argv_start_index + 3]
 
         verbose_arg = sys.argv[argv_start_index + 4].lower()
-        verbose = (verbose_arg == "true")
+        if verbose_arg == "true":
+            verbose = True
+        elif verbose_arg == "false":
+            verbose = False
 
-        debugsleep_arg = sys.argv[argv_start_index + 5].lower()
-        debugsleep = (debugsleep_arg == "true")
+        debugsleep_arg = sys.argv[argv_start_index + 5].strip().lower()
+        if debugsleep_arg == "true":
+            debugsleep = True
+        elif debugsleep_arg == "false":
+            debugsleep = False
 
         # get argument for optional export to glb/fbx
-        export_arg = sys.argv[argv_start_index + 6].lower()
-        export = export_arg
+        export_arg = sys.argv[argv_start_index + 6].lower().replace(",", " ").split()
+        export = set(x.strip() for x in export_arg if x.strip() in {"glb", "fbx"}) or None
+
+
 
         global current_dir
-        current_dir_arg = sys.argv[argv_start_index + 6].lower()
+        current_dir_arg = sys.argv[argv_start_index + 7].lower()
         current_dir = current_dir_arg
 
     except (ValueError, IndexError) as e:
@@ -127,7 +135,7 @@ try:
 
     if debugsleep:
         log_to_blender("Debug sleep mode enabled. The script will pause for debugging.")
-        time.sleep(0.5) # Short initial sleep
+        time.sleep(5)
 
     # --- Argument Validation ---
     # Check if base_blend_file exists
@@ -258,35 +266,65 @@ try:
         # Decide if you want to exit here or continue to export an empty/base file
     # --- End Import Preinstanced File ---
 
-    # --- Exporting to GLB ---
-    if export == "true":
-        log_to_blender(f"Exporting to GLB file: {output_glb}")
+    # --- Exporting to GLB/FBX ---
+    if export is not None:
+        if "glb" in export:
+            log_to_blender(f"Exporting to GLB file: {output_glb}")
 
-        try:
-            # Export the scene to .glb
-            # Ensure output directory exists before exporting
-            output_dir = os.path.dirname(output_glb)
-            if output_dir and not os.path.exists(output_dir):
-                # This check was done earlier, but double-checking before export is safer
-                log_to_blender(f"Error: Output directory does not exist before GLB export: {output_dir}", to_blender_editor=True) # Log error to editor
+            try:
+                # Export the scene to .glb
+                # Ensure output directory exists before exporting
+                output_dir = os.path.dirname(output_glb)
+                if output_dir and not os.path.exists(output_dir):
+                    # This check was done earlier, but double-checking before export is safer
+                    log_to_blender(f"Error: Output directory does not exist before GLB export: {output_dir}", to_blender_editor=True) # Log error to editor
+                    if debugsleep: time.sleep(5)
+                    sys.exit(1) # Cannot export if directory doesn't exist
+                elif output_dir:
+                    log_to_blender(f"Output directory confirmed before export: {output_dir}")
+
+                # Select all objects you want to export if necessary,
+                # or export the entire scene if that's the default behavior of gltf exporter
+                # bpy.ops.object.select_all(action='SELECT') # Example: select all objects
+
+                bpy.ops.export_scene.gltf(filepath=output_glb, export_format='GLB', use_selection=False) # use_selection=False exports everything
+                log_to_blender(f"39: Exported to GLB file: {output_glb}")
+            except Exception as e:
+                log_to_blender(f"40: Error exporting to GLB: {e}", to_blender_editor=True) # Log error to editor
                 if debugsleep: time.sleep(5)
-                sys.exit(1) # Cannot export if directory doesn't exist
-            elif output_dir:
-                log_to_blender(f"Output directory confirmed before export: {output_dir}")
+                sys.exit(1) # Exit if export fails
 
-            # Select all objects you want to export if necessary,
-            # or export the entire scene if that's the default behavior of gltf exporter
-            # bpy.ops.object.select_all(action='SELECT') # Example: select all objects
+            log_to_blender("41: Export complete. Script finished successfully.")
+        if "fbx" in export:
+            # get fbx path/name from output_glb, remove .glb and add .fbx
+            output_fbx = os.path.splitext(output_glb)[0] + ".fbx"
+            log_to_blender(f"Exporting to FBX file: {output_fbx}")
 
-            bpy.ops.export_scene.gltf(filepath=output_glb, export_format='GLB', use_selection=False) # use_selection=False exports everything
-            log_to_blender(f"39: Exported to GLB file: {output_glb}")
-        except Exception as e:
-            log_to_blender(f"40: Error exporting to GLB: {e}", to_blender_editor=True) # Log error to editor
-            if debugsleep: time.sleep(5)
-            sys.exit(1) # Exit if export fails
+            try:
+                # Export the scene to .fbx
+                # Ensure output directory exists before exporting
+                output_dir = os.path.dirname(output_fbx)
+                if output_dir and not os.path.exists(output_dir):
+                    # This check was done earlier, but double-checking before export is safer
+                    log_to_blender(f"Error: Output directory does not exist before FBX export: {output_dir}", to_blender_editor=True) # Log error to editor
+                    if debugsleep: time.sleep(5)
+                    sys.exit(1) # Cannot export if directory doesn't exist
+                elif output_dir:
+                    log_to_blender(f"Output directory confirmed before export: {output_dir}")
 
-        log_to_blender("41: Export complete. Script finished successfully.")
-    # --- End Exporting to GLB ---
+                # Select all objects you want to export if necessary,
+                # or export the entire scene if that's the default behavior of gltf exporter
+                # bpy.ops.object.select_all(action='SELECT') # Example: select all objects
+
+                bpy.ops.export_scene.fbx(filepath=output_fbx, use_selection=False) # use_selection=False exports everything
+                log_to_blender(f"39: Exported to FBX file: {output_fbx}")
+            except Exception as e:
+                log_to_blender(f"40: Error exporting to FBX: {e}", to_blender_editor=True) # Log error to editor
+                if debugsleep: time.sleep(5)
+                sys.exit(1) # Exit if export fails
+
+            log_to_blender("41: Export complete. Script finished successfully.")
+    # --- End Exporting to GLB/FBX ---
 
     # --- Saving the Blend File ---
     try:
